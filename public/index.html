@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexo PRO IA — Atendimento</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #0d0f14;
+  --bg2:      #13161e;
+  --bg3:      #1a1e28;
+  --border:   #252938;
+  --border2:  #2e3347;
+  --text:     #e8eaf0;
+  --text2:    #8b90a6;
+  --text3:    #555c78;
+  --accent:   #4f7cff;
+  --accent2:  #7b9fff;
+  --green:    #22c55e;
+  --green2:   #16a34a;
+  --amber:    #f59e0b;
+  --red:      #ef4444;
+  --sent-bg:  #1b2a6e;
+  --r:        12px;
+  --font:     'DM Sans', sans-serif;
+  --mono:     'DM Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; height: 100vh; }
+
+#sidebar { width: 300px; min-width: 300px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; height: 100vh; }
+#sidebar-header { padding: 18px 16px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-logo { width: 34px; height: 34px; background: var(--accent); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+.brand-name { font-size: 13px; font-weight: 600; letter-spacing: -.3px; }
+.brand-sub  { font-size: 11px; color: var(--text3); margin-top: 1px; }
+#refresh-btn { background: none; border: 1px solid var(--border2); border-radius: 8px; color: var(--text2); cursor: pointer; padding: 5px 9px; font-size: 12px; transition: all .15s; display: flex; align-items: center; gap: 4px; font-family: var(--font); }
+#refresh-btn:hover { background: var(--bg3); color: var(--text); }
+#refresh-btn.spinning svg { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#conv-list { flex: 1; overflow-y: auto; padding: 6px; }
+#conv-list::-webkit-scrollbar { width: 3px; }
+#conv-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.conv-item { padding: 11px 13px; border-radius: 10px; cursor: pointer; transition: background .1s; margin-bottom: 2px; border: 1px solid transparent; }
+.conv-item:hover  { background: var(--bg3); }
+.conv-item.active { background: var(--bg3); border-color: var(--border2); }
+.conv-row1 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.conv-name  { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.conv-time  { font-size: 11px; color: var(--text3); font-family: var(--mono); flex-shrink: 0; }
+.conv-preview { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 20px; font-family: var(--mono); }
+.b-wait   { background: rgba(245,158,11,.12); color: var(--amber); }
+.b-active { background: rgba(79,124,255,.12); color: var(--accent2); }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot-pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.35} }
+.dot-wait   { background: var(--amber); }
+.dot-active { background: var(--accent); }
+.empty-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 160px; gap: 8px; color: var(--text3); font-size: 13px; }
+
+#main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text3); }
+#placeholder p { font-size: 14px; }
+#chat-view { display: none; flex-direction: column; height: 100vh; overflow: hidden; }
+
+#chat-header { padding: 14px 22px; border-bottom: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.client-info { display: flex; align-items: center; gap: 12px; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; flex-shrink: 0; }
+.client-name  { font-size: 14px; font-weight: 500; }
+.client-phone { font-size: 12px; color: var(--text2); font-family: var(--mono); margin-top: 1px; }
+.btn-finish { background: var(--green2); color: #fff; border: none; border-radius: 8px; padding: 7px 15px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s; font-family: var(--font); display: flex; align-items: center; gap: 6px; }
+.btn-finish:hover    { background: #15803d; }
+.btn-finish:disabled { opacity: .4; cursor: not-allowed; }
+
+#summary-bar { margin: 10px 22px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border2); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; font-size: 12px; color: var(--text2); line-height: 1.6; flex-shrink: 0; }
+#summary-bar strong { color: var(--accent2); font-weight: 500; }
+
+#messages { flex: 1; overflow-y: auto; padding: 14px 22px; display: flex; flex-direction: column; gap: 6px; }
+#messages::-webkit-scrollbar { width: 3px; }
+#messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.msg { display: flex; flex-direction: column; max-width: 72%; }
+.msg.sent { align-self: flex-end; align-items: flex-end; }
+.msg.recv { align-self: flex-start; align-items: flex-start; }
+.bubble { padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.msg.sent .bubble { background: var(--sent-bg); color: #c5d2ff; border-bottom-right-radius: 3px; }
+.msg.recv .bubble { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 3px; }
+.msg-meta { font-size: 10.5px; color: var(--text3); margin-top: 2px; font-family: var(--mono); padding: 0 3px; }
+.file-link { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; margin-top: 5px; background: rgba(79,124,255,.1); border: 1px solid rgba(79,124,255,.2); border-radius: 8px; font-size: 12px; color: var(--accent2); cursor: pointer; text-decoration: none; }
+.file-link:hover { background: rgba(79,124,255,.18); }
+
+#input-area { padding: 14px 22px 18px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+#file-preview { display: none; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 12px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; font-size: 12px; color: var(--text2); }
+#file-preview.show { display: flex; }
+#fpname { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#fpremove { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; line-height: 1; }
+#fpremove:hover { color: var(--red); }
+.input-row { display: flex; align-items: flex-end; gap: 8px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 11px; padding: 9px 11px; transition: border-color .15s; }
+.input-row:focus-within { border-color: var(--accent); }
+#attach-btn { background: none; border: none; color: var(--text3); cursor: pointer; padding: 3px; border-radius: 6px; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px; transition: color .15s; }
+#attach-btn:hover { color: var(--accent2); }
+#msg-input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 13.5px; font-family: var(--font); resize: none; min-height: 22px; max-height: 110px; line-height: 1.5; }
+#msg-input::placeholder { color: var(--text3); }
+#send-btn { background: var(--accent); border: none; border-radius: 8px; color: #fff; cursor: pointer; padding: 6px 14px; font-size: 13px; font-family: var(--font); font-weight: 500; flex-shrink: 0; align-self: flex-end; transition: background .15s; display: flex; align-items: center; gap: 5px; }
+#send-btn:hover    { background: #3a66e0; }
+#send-btn:disabled { opacity: .4; cursor: not-allowed; }
+#file-input { display: none; }
+
+#status-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,15,20,.92); border-top: 1px solid var(--border); padding: 5px 18px; font-size: 11px; font-family: var(--mono); color: var(--text3); display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); z-index: 50; }
+.ws-dot { width: 6px; height: 6px; border-radius: 50%; }
+.ws-ok  { background: var(--green); }
+.ws-off { background: var(--red); }
+
+#toast { position: fixed; bottom: 28px; right: 22px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px; padding: 11px 16px; font-size: 13px; z-index: 200; transform: translateY(70px); opacity: 0; transition: all .22s; max-width: 300px; }
+#toast.show  { transform: translateY(0); opacity: 1; }
+#toast.ok    { border-color: var(--green2); }
+#toast.error { border-color: var(--red); }
+.notif-badge { background: var(--red); color: #fff; font-size: 10px; font-weight: 600; font-family: var(--mono); padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <div class="brand">
+      <div class="brand-logo">FP</div>
+      <div>
+        <div class="brand-name">Flexo Inbox</div>
+        <div class="brand-sub">Atendimento humano</div>
+      </div>
+    </div>
+    <button id="refresh-btn" onclick="loadConversations()" title="Atualizar lista">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/>
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M3 21v-5h5"/>
+      </svg>
+      Atualizar
+    </button>
+  </div>
+  <div id="conv-list">
+    <div class="empty-msg">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <p>Carregando...</p>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="placeholder">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+    <p>Selecione uma conversa</p>
+  </div>
+
+  <div id="chat-view">
+    <div id="chat-header">
+      <div class="client-info">
+        <div class="avatar" id="c-avatar">?</div>
+        <div>
+          <div class="client-name" id="c-name">—</div>
+          <div class="client-phone" id="c-phone">—</div>
+        </div>
+      </div>
+      <button class="btn-finish" id="finish-btn" onclick="finishConv()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Finalizar atendimento
+      </button>
+    </div>
+
+    <div id="summary-bar" style="display:none">
+      <strong>📋 Resumo da IA:</strong> <span id="summary-text"></span>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="input-area">
+      <div id="file-preview">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+        <span id="fpname"></span>
+        <button id="fpremove" onclick="removeFile()">✕</button>
+      </div>
+      <div class="input-row">
+        <button id="attach-btn" title="Anexar arquivo" onclick="document.getElementById('file-input').click()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <textarea id="msg-input" placeholder="Digite sua mensagem… (Enter para enviar)" rows="1"
+          onkeydown="onKey(event)" oninput="autoGrow(this)"></textarea>
+        <button id="send-btn" onclick="sendMsg()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          Enviar
+        </button>
+      </div>
+      <input type="file" id="file-input" onchange="onFileSelect(event)">
+    </div>
+  </div>
+</div>
+
+<div id="status-bar">
+  <span class="ws-dot ws-off" id="ws-dot"></span>
+  <span id="ws-label">Conectando...</span>
+  <span style="margin-left:auto" id="last-update"></span>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let activeId  = null;
+let convs     = [];
+let selFile   = null;
+let ws        = null;
+let unread    = {};
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    setWS(true);
+    if (activeId) ws.send(JSON.stringify({ type: 'watch', convId: activeId }));
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'update' && msg.convId) {
+        if (msg.action === 'new_message') {
+          if (msg.convId === activeId) {
+            appendMsgDOM(msg.message);
+          } else {
+            unread[msg.convId] = (unread[msg.convId] || 0) + 1;
+            renderSidebar();
+            if (Notification.permission === 'granted') {
+              new Notification('Nova mensagem — Flexo Inbox', { body: msg.message?.texto || 'Nova mensagem' });
+            }
+          }
+        }
+        if (msg.action === 'finished' && msg.convId === activeId) {
+          toast('Conversa finalizada', 'ok');
+          activeId = null;
+          showPlaceholder();
+          loadConversations();
+        }
+      }
+      if (msg.type === 'new_conv') {
+        toast(`Nova conversa: ${msg.nome || 'Cliente'}`, 'ok');
+        loadConversations();
+      }
+      if (msg.type === 'conv_updated') loadConversations();
+      if (msg.type === 'conv_finished') {
+        convs = convs.filter(c => c.id !== msg.convId);
+        renderSidebar();
+      }
+    } catch {}
+  };
+
+  ws.onclose = () => { setWS(false); setTimeout(connectWS, 3000); };
+  ws.onerror = () => ws.close();
+
+  setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+  }, 25000);
+}
+
+function setWS(ok) {
+  document.getElementById('ws-dot').className = `ws-dot ${ok ? 'ws-ok' : 'ws-off'}`;
+  document.getElementById('ws-label').textContent = ok ? 'Conectado (tempo real)' : 'Reconectando...';
+}
+
+async function loadConversations() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  try {
+    const res  = await fetch('/api/conversations');
+    const body = await res.json();
+    convs = body.data || [];
+    renderSidebar();
+    document.getElementById('last-update').textContent =
+      'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+  } catch { toast('Erro ao carregar conversas', 'error'); }
+  finally { btn.classList.remove('spinning'); }
+}
+
+function renderSidebar() {
+  const list = document.getElementById('conv-list');
+  if (!convs.length) {
+    list.innerHTML = `<div class="empty-msg">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <p>Sem atendimentos pendentes</p>
+    </div>`;
+    return;
+  }
+  list.innerHTML = convs.map(c => {
+    const isActive = c.id === activeId;
+    const last     = c.historico?.length ? c.historico[c.historico.length - 1] : null;
+    const preview  = last ? trunc(last.texto, 48) : 'Sem mensagens';
+    const bc       = c.status === 'aguardando' ? 'b-wait' : 'b-active';
+    const dc       = c.status === 'aguardando' ? 'dot-wait' : 'dot-active';
+    const label    = c.status === 'aguardando' ? 'Aguardando' : 'Em atendimento';
+    const nUnread  = unread[c.id] || 0;
+    return `<div class="conv-item${isActive?' active':''}" onclick="selectConv('${c.id}')">
+      <div class="conv-row1">
+        <span class="conv-name">${esc(c.nome)}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${nUnread ? `<span class="notif-badge">${nUnread}</span>` : ''}
+          <span class="conv-time">${fmtTime(c.atualizado_em)}</span>
+        </div>
+      </div>
+      <div class="conv-preview">${esc(preview)}</div>
+      <span class="badge ${bc}"><span class="dot ${dc} dot-pulse"></span>${label}</span>
+    </div>`;
+  }).join('');
+}
+
+async function selectConv(id) {
+  activeId = id;
+  unread[id] = 0;
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'watch', convId: id }));
+  try {
+    const res  = await fetch(`/api/conversations/${id}`);
+    const body = await res.json();
+    const conv = body.data;
+    if (!conv) return;
+    const idx = convs.findIndex(c => c.id === id);
+    if (idx >= 0) convs[idx] = conv;
+    renderSidebar();
+    showChat(conv);
+  } catch { toast('Erro ao carregar conversa', 'error'); }
+}
+
+function showChat(conv) {
+  document.getElementById('placeholder').style.display = 'none';
+  const cv = document.getElementById('chat-view');
+  cv.style.display = 'flex';
+  document.getElementById('c-avatar').textContent = (conv.nome || 'C').charAt(0).toUpperCase();
+  document.getElementById('c-name').textContent   = conv.nome;
+  document.getElementById('c-phone').textContent  = fmtPhone(conv.telefone);
+  document.getElementById('finish-btn').disabled  = conv.status === 'finalizado';
+  const sb = document.getElementById('summary-bar');
+  if (conv.resumo_ia) {
+    sb.style.display = 'block';
+    document.getElementById('summary-text').textContent = conv.resumo_ia;
+  } else { sb.style.display = 'none'; }
+  renderMessages(conv.historico || []);
+}
+
+function showPlaceholder() {
+  document.getElementById('chat-view').style.display = 'none';
+  document.getElementById('placeholder').style.display = 'flex';
+}
+
+function renderMessages(historico) {
+  const box = document.getElementById('messages');
+  box.innerHTML = historico.map(m => msgHTML(m)).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function msgHTML(m) {
+  const isSent = m.de === 'humano' || m.de === 'atendente';
+  const cls    = isSent ? 'sent' : 'recv';
+  const quem   = isSent ? 'Você' : 'Cliente';
+  const hora   = m.hora || '';
+  let fileHtml = '';
+  if (m.arquivo) {
+    fileHtml = `<a class="file-link" href="${m.arquivo.url || '#'}" target="_blank">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+      </svg>${esc(m.arquivo.nome || 'Arquivo')}
+    </a>`;
+  }
+  return `<div class="msg ${cls}">
+    <div class="bubble">${esc(m.texto)}${fileHtml}</div>
+    <div class="msg-meta">${quem}${hora ? ' · ' + hora : ''}</div>
+  </div>`;
+}
+
+function appendMsgDOM(m) {
+  const box = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.innerHTML = msgHTML(m);
+  box.appendChild(div.firstChild);
+  box.scrollTop = box.scrollHeight;
+  const conv = convs.find(c => c.id === activeId);
+  if (conv) { conv.historico = conv.historico || []; conv.historico.push(m); renderSidebar(); }
+}
+
+async function sendMsg() {
+  if (!activeId) return;
+  const input = document.getElementById('msg-input');
+  const texto = input.value.trim();
+  if (!texto && !selFile) return;
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  try {
+    let res;
+    if (selFile) {
+      const form = new FormData();
+      form.append('id', activeId);
+      form.append('file', selFile);
+      if (texto) form.append('caption', texto);
+      res = await fetch('/api/send-file', { method: 'POST', body: form });
+    } else {
+      res = await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: activeId, texto }) });
+    }
+    const body = await res.json();
+    if (!body.ok) throw new Error(body.error || 'Erro desconhecido');
+    input.value = '';
+    input.style.height = 'auto';
+    removeFile();
+  } catch (e) { toast('Erro ao enviar: ' + e.message, 'error'); }
+  finally { btn.disabled = false; input.focus(); }
+}
+
+async function finishConv() {
+  if (!activeId) return;
+  const conv = convs.find(c => c.id === activeId);
+  if (!confirm(`Finalizar atendimento de ${conv?.nome || 'cliente'}?\nA IA voltará a responder este número.`)) return;
+  const btn = document.getElementById('finish-btn');
+  btn.disabled = true;
+  btn.textContent = 'Finalizando...';
+  try {
+    const res  = await fetch('/api/finish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: activeId }) });
+    const body = await res.json();
+    if (!body.ok) throw new Error(body.error);
+    toast('✅ Atendimento finalizado. IA liberada!', 'ok');
+    activeId = null;
+    showPlaceholder();
+    setTimeout(loadConversations, 800);
+  } catch (e) {
+    toast('Erro ao finalizar: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Finalizar atendimento';
+  }
+}
+
+function onFileSelect(e) {
+  selFile = e.target.files[0];
+  if (!selFile) return;
+  document.getElementById('fpname').textContent = selFile.name;
+  document.getElementById('file-preview').classList.add('show');
+}
+function removeFile() {
+  selFile = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('file-preview').classList.remove('show');
+}
+function onKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } }
+function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 110) + 'px'; }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function trunc(s, n) { return (s||'').length > n ? s.slice(0,n)+'…' : (s||''); }
+function fmtPhone(p) {
+  const d = (p||'').replace(/\D/g,'');
+  if (d.length >= 12) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;
+  return p;
+}
+function fmtTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso), now = new Date();
+    if (d.toDateString() === now.toDateString())
+      return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  } catch { return ''; }
+}
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 3500);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  connectWS();
+  loadConversations();
+  setInterval(loadConversations, 20000);
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+});
+</script>
+</body>
+</html>
