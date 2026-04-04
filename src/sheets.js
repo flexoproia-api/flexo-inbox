@@ -5,6 +5,19 @@ const KEY = () => process.env.GOOGLE_API_KEY;
 const SID = () => process.env.SHEETS_ID;
 const N8N = () => process.env.N8N_SHEETS_WEBHOOK;
 
+// Horário de Brasília
+function horaBrasilia() {
+  return new Date().toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
+}
+
+function isoAgora() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + '-03:00';
+}
+
 async function getRows(aba, colunas) {
   const range = encodeURIComponent(`${aba}!A2:${colunas}1000`);
   const url = `${API}/${SID()}/values/${range}?key=${KEY()}`;
@@ -71,7 +84,7 @@ async function createConversation({ id, telefone, nome, resumo_ia, historico }) 
     status:             'aguardando',
     resumo_ia:          resumo_ia || '',
     historico:          JSON.stringify(historico || []),
-    atualizado_em:      new Date().toISOString(),
+    atualizado_em:      isoAgora(),
     atendente:          '',
     numero_atendimento: numero,
   });
@@ -82,33 +95,45 @@ async function appendMessage(id, mensagem) {
   if (!conv) throw new Error(`Conversa ${id} não encontrada`);
 
   const historico = Array.isArray(conv.historico) ? conv.historico : [];
-  const hora = mensagem.hora || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hora = mensagem.hora || horaBrasilia();
 
-  historico.push({
+  // FIX: evita duplicar — só adiciona se não for mensagem do cliente via webhook/incoming
+  // (o webhook/incoming já chama appendMessage, não duplicar via gravar_historico)
+  const novaMensagem = {
     de:        mensagem.de,
     texto:     mensagem.texto,
     hora,
     atendente: mensagem.atendente || '',
-    arquivo:   mensagem.arquivo || undefined,
-  });
+    ...(mensagem.arquivo ? { arquivo: mensagem.arquivo } : {}),
+  };
+
+  historico.push(novaMensagem);
+
+  // FIX: status — aceita vazio ou 'aguardando' como gatilho para em_atendimento
+  const novoStatus = (conv.status === 'aguardando' || conv.status === '')
+    ? 'em_atendimento'
+    : conv.status;
 
   await n8nWrite({
     acao:          'atualizar_atendimento',
     id,
-    status:        conv.status === 'aguardando' ? 'em_atendimento' : conv.status,
+    status:        novoStatus,
     historico:     JSON.stringify(historico),
-    atualizado_em: new Date().toISOString(),
+    atualizado_em: isoAgora(),
   });
 
-  await n8nWrite({
-    acao:               'gravar_historico',
-    id_atendimento:     id,
-    telefone:           conv.telefone,
-    data_hora:          new Date().toISOString(),
-    atendente:          mensagem.atendente || conv.atendente || '',
-    mensagem_cliente:   mensagem.de === 'cliente' ? mensagem.texto : '',
-    resposta_atendente: (mensagem.de === 'humano' || mensagem.de === 'atendente') ? mensagem.texto : '',
-  });
+  // gravar_historico só para mensagens humanas (evita duplicar no histórico separado)
+  if (mensagem.de === 'humano' || mensagem.de === 'atendente') {
+    await n8nWrite({
+      acao:               'gravar_historico',
+      id_atendimento:     id,
+      telefone:           conv.telefone,
+      data_hora:          isoAgora(),
+      atendente:          mensagem.atendente || conv.atendente || '',
+      mensagem_cliente:   '',
+      resposta_atendente: mensagem.texto,
+    });
+  }
 
   return { ...conv, historico };
 }
@@ -118,7 +143,7 @@ async function setAtendente(id, atendente) {
     acao:          'atualizar_atendimento',
     id,
     atendente,
-    atualizado_em: new Date().toISOString(),
+    atualizado_em: isoAgora(),
   });
 }
 
@@ -127,7 +152,7 @@ async function setStatus(id, status) {
     acao:          'atualizar_atendimento',
     id,
     status,
-    atualizado_em: new Date().toISOString(),
+    atualizado_em: isoAgora(),
   });
 }
 
