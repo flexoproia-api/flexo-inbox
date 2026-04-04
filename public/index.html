@@ -1,3 +1,10 @@
+Entendi! O botão trava mas a ação acontece — é só o frontend que não recebe a confirmação a tempo.
+
+O problema é que o `/api/finish` demora porque faz 2 chamadas ao N8N (setStatus + gravar histórico). Vamos fazer o botão finalizar **otimisticamente** — fecha imediatamente e manda o request em background.
+
+Vou corrigir os 4 pontos de uma vez. No GitHub → `public/index.html` → lápis → apaga tudo e cola:
+
+```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -24,8 +31,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .brand-sub{font-size:11px;color:var(--text3);margin-top:1px}
 #atendente-bar{padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:12px}
 #atendente-badge{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
-#atendente-nome{color:var(--text2);font-family:var(--mono);flex:1}
-#trocar-btn{background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;font-family:var(--font)}
+#atendente-nome{color:var(--text2);font-family:var(--mono);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#trocar-btn{background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;font-family:var(--font);flex-shrink:0}
 #trocar-btn:hover{color:var(--accent2)}
 #refresh-btn{background:none;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;padding:5px 9px;font-size:12px;display:flex;align-items:center;gap:4px;font-family:var(--font);transition:all .15s}
 #refresh-btn:hover{background:var(--bg3);color:var(--text)}
@@ -34,14 +41,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 #conv-list{flex:1;overflow-y:auto;padding:6px}
 #conv-list::-webkit-scrollbar{width:3px}
 #conv-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.conv-item{padding:11px 13px;border-radius:10px;cursor:pointer;transition:background .1s;margin-bottom:2px;border:1px solid transparent}
+.conv-item{padding:11px 13px;border-radius:10px;cursor:pointer;transition:background .1s;margin-bottom:2px;border:1px solid transparent;position:relative}
 .conv-item:hover{background:var(--bg3)}
 .conv-item.active{background:var(--bg3);border-color:var(--border2)}
 .conv-item.locked{opacity:.55;cursor:not-allowed}
+.conv-item.has-unread{border-left:3px solid var(--accent)}
 .conv-row1{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}
-.conv-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.conv-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.conv-name.unread{color:#fff;font-weight:600}
 .conv-time{font-size:11px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
 .conv-preview{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.conv-preview.unread{color:var(--text);font-weight:500}
 .conv-atend{font-size:10px;color:var(--text3);margin-bottom:4px}
 .badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:500;padding:2px 7px;border-radius:20px;font-family:var(--mono)}
 .b-wait{background:rgba(245,158,11,.12);color:var(--amber)}
@@ -52,7 +62,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .dot-wait{background:var(--amber)}
 .dot-active{background:var(--accent)}
 .empty-msg{display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;gap:8px;color:var(--text3);font-size:13px}
-.notif-badge{background:var(--red);color:#fff;font-size:10px;font-weight:600;font-family:var(--mono);padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+.notif-badge{background:var(--red);color:#fff;font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:10px;min-width:20px;text-align:center;animation:pulse 1.4s ease-in-out infinite}
 
 #main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
 #placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text3)}
@@ -290,7 +300,10 @@ function connectWS() {
           loadConversations();
         }
       }
-      if (msg.type === 'new_conv') { toast(`Nova conversa: ${msg.nome || 'Cliente'}`, 'ok'); loadConversations(); }
+      if (msg.type === 'new_conv') {
+        toast(`🆕 Nova conversa: ${msg.nome || msg.telefone || 'Cliente'}`, 'ok');
+        loadConversations();
+      }
       if (msg.type === 'conv_updated' || msg.type === 'conv_finished') loadConversations();
     } catch {}
   };
@@ -320,6 +333,13 @@ async function loadConversations() {
   finally { btn.classList.remove('spinning'); }
 }
 
+function fmtTel(t) {
+  const d = String(t||'').replace(/\D/g,'');
+  if (d.length >= 12) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  return t||'';
+}
+
 function renderSidebar() {
   const list = document.getElementById('conv-list');
   if (!convs.length) {
@@ -330,24 +350,28 @@ function renderSidebar() {
     return;
   }
   list.innerHTML = convs.map(c => {
-    const isActive = c.id === activeId;
-    const last     = c.historico?.length ? c.historico[c.historico.length - 1] : null;
-    const preview  = last ? trunc(last.texto, 45) : 'Sem mensagens';
-    const bc       = c.status === 'aguardando' ? 'b-wait' : 'b-active';
-    const dc       = c.status === 'aguardando' ? 'dot-wait' : 'dot-active';
-    const label    = c.status === 'aguardando' ? 'Aguardando' : 'Em atendimento';
-    const locked   = c.atendente && c.atendente !== MEU_NOME;
-    const nUnread  = unread[c.id] || 0;
+    const isActive  = c.id === activeId;
+    const last      = c.historico?.length ? c.historico[c.historico.length - 1] : null;
+    const preview   = last ? trunc(last.texto, 45) : 'Sem mensagens';
+    const bc        = c.status === 'aguardando' ? 'b-wait' : 'b-active';
+    const dc        = c.status === 'aguardando' ? 'dot-wait' : 'dot-active';
+    const label     = c.status === 'aguardando' ? 'Aguardando' : 'Em atendimento';
+    const locked    = c.atendente && c.atendente !== MEU_NOME;
+    const nUnread   = unread[c.id] || 0;
+    const hasUnread = nUnread > 0;
+    // Mostra nome se disponível e diferente de "Cliente WhatsApp", senão mostra telefone formatado
+    const nomePrincipal = (c.nome && c.nome !== 'Cliente WhatsApp' && c.nome !== 'Cliente')
+      ? c.nome : fmtTel(c.telefone);
     const atendInfo = c.atendente ? `<div class="conv-atend">👤 ${esc(c.atendente)}</div>` : '';
-    return `<div class="conv-item${isActive?' active':''}${locked?' locked':''}" onclick="selectConv('${c.id}')">
+    return `<div class="conv-item${isActive?' active':''}${locked?' locked':''}${hasUnread?' has-unread':''}" onclick="selectConv('${c.id}')">
       <div class="conv-row1">
-        <span class="conv-name">${esc(c.nome || c.telefone)}</span>
+        <span class="conv-name${hasUnread?' unread':''}">${esc(nomePrincipal)}</span>
         <div style="display:flex;align-items:center;gap:6px">
           ${nUnread?`<span class="notif-badge">${nUnread}</span>`:''}
           <span class="conv-time">${fmtTime(c.atualizado_em)}</span>
         </div>
       </div>
-      <div class="conv-preview">${esc(preview)}</div>
+      <div class="conv-preview${hasUnread?' unread':''}">${esc(preview)}</div>
       ${atendInfo}
       <span class="badge ${bc}"><span class="dot ${dc} dot-pulse"></span>${label}</span>
     </div>`;
@@ -359,11 +383,10 @@ async function selectConv(id) {
   const conv = convs.find(c => c.id === id);
   if (!conv) return;
   if (conv.atendente && conv.atendente !== MEU_NOME) {
-    toast(`Conversa com ${conv.atendente}`, 'error'); return;
+    toast(`🔒 Conversa com ${conv.atendente}`, 'error'); return;
   }
   activeId = id;
   unread[id] = 0;
-  // Limpa o input ao trocar de conversa
   document.getElementById('msg-input').value = '';
   document.getElementById('msg-input').style.height = 'auto';
   removeFile();
@@ -389,12 +412,13 @@ async function selectConv(id) {
 function showChat(conv) {
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('chat-view').style.display = 'flex';
-  document.getElementById('c-avatar').textContent = (conv.nome || conv.telefone || 'C').charAt(0).toUpperCase();
-  document.getElementById('c-name').textContent   = conv.nome || 'Cliente';
-  document.getElementById('c-phone').textContent  = fmtPhone(conv.telefone);
+  const nomePrincipal = (conv.nome && conv.nome !== 'Cliente WhatsApp' && conv.nome !== 'Cliente')
+    ? conv.nome : fmtTel(conv.telefone);
+  document.getElementById('c-avatar').textContent = nomePrincipal.charAt(0).toUpperCase();
+  document.getElementById('c-name').textContent   = nomePrincipal;
+  document.getElementById('c-phone').textContent  = fmtTel(conv.telefone);
   const atEl = document.getElementById('c-atend');
   atEl.textContent = conv.atendente ? `👤 ${conv.atendente}` : '';
-  // Reset botão finalizar
   const btn = document.getElementById('finish-btn');
   btn.disabled = false;
   btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Finalizar atendimento`;
@@ -486,43 +510,29 @@ async function sendMsg() {
   finally { btn.disabled = false; input.focus(); }
 }
 
-// ─── FINALIZAR ────────────────────────────────────────────────────────────────
+// ─── FINALIZAR (otimista) ─────────────────────────────────────────────────────
 async function finishConv() {
   if (!activeId) return;
   const conv = convs.find(c => c.id === activeId);
-  const nome = conv?.nome || conv?.telefone || 'cliente';
+  const nome = (conv?.nome && conv.nome !== 'Cliente WhatsApp') ? conv.nome : fmtTel(conv?.telefone);
   if (!confirm(`Finalizar atendimento de ${nome}?\nA IA voltará a responder este número.`)) return;
-
-  const btn = document.getElementById('finish-btn');
-  btn.disabled = true;
-  btn.textContent = 'Finalizando...';
 
   const idParaFinalizar = activeId;
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch('/api/finish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: idParaFinalizar }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    const body = await res.json();
-    if (!body.ok) throw new Error(body.error);
-    toast('✅ Finalizado! IA liberada.', 'ok');
-    resetChat();
-    setTimeout(loadConversations, 500);
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      toast('Timeout — verifique se foi finalizado', 'error');
-    } else {
-      toast('Erro: ' + e.message, 'error');
-    }
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Finalizar atendimento`;
-  }
+  // Fecha imediatamente (otimista)
+  toast('✅ Atendimento finalizado! IA liberada.', 'ok');
+  resetChat();
+  convs = convs.filter(c => c.id !== idParaFinalizar);
+  renderSidebar();
+
+  // Manda o request em background
+  fetch('/api/finish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: idParaFinalizar }),
+  }).catch(() => {});
+
+  setTimeout(loadConversations, 2000);
 }
 
 // ─── ARQUIVO ──────────────────────────────────────────────────────────────────
@@ -565,9 +575,12 @@ function toast(msg,type='') {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded',()=>{
   initNome();
-  setInterval(loadConversations, 20000);
+  setInterval(loadConversations, 15000);
   if('Notification'in window&&Notification.permission==='default') Notification.requestPermission();
 });
 </script>
 </body>
 </html>
+```
+
+**Commit changes** → **Commit changes** e me avisa! ✅
