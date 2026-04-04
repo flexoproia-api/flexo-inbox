@@ -1,9 +1,3 @@
-Entendi! O botão trava mas a ação acontece — é só o frontend que não recebe a confirmação a tempo.
-
-O problema é que o `/api/finish` demora porque faz 2 chamadas ao N8N (setStatus + gravar histórico). Vamos fazer o botão finalizar **otimisticamente** — fecha imediatamente e manda o request em background.
-
-Vou corrigir os 4 pontos de uma vez. No GitHub → `public/index.html` → lápis → apaga tudo e cola:
-
 ```html
 <!DOCTYPE html>
 <html lang="pt-BR">
