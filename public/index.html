@@ -328,6 +328,15 @@ async function loadConversations() {
       if (ativa) novas = [ativa, ...novas];
     }
 
+    // FIX: não sobrescreve o histórico da conversa ativa
+    if (activeId) {
+      const ativaAtual = convs.find(c => c.id === activeId);
+      const novaAtiva  = novas.find(c => c.id === activeId);
+      if (ativaAtual && novaAtiva) {
+        novaAtiva.historico = ativaAtual.historico;
+      }
+    }
+
     convs = novas;
     renderSidebar();
     document.getElementById('last-update').textContent =
