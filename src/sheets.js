@@ -1,16 +1,15 @@
 const axios = require('axios');
 
-const API  = 'https://sheets.googleapis.com/v4/spreadsheets';
-const KEY  = () => process.env.GOOGLE_API_KEY;
-const SID  = () => process.env.SHEETS_ID;
-const TAB  = () => process.env.SHEETS_TAB || 'atendimentos';
-
-// ─── LEITURA (via API Key pública) ───────────────────────────────────────────
+const API = 'https://sheets.googleapis.com/v4/spreadsheets';
+const KEY = () => process.env.GOOGLE_API_KEY;
+const SID = () => process.env.SHEETS_ID;
+const TAB = () => process.env.SHEETS_TAB || 'atendimentos';
+const N8N = () => process.env.N8N_SHEETS_WEBHOOK;
 
 async function getAllRows() {
   const range = encodeURIComponent(`${TAB()}!A2:G1000`);
-  const url   = `${API}/${SID()}/values/${range}?key=${KEY()}`;
-  const res   = await axios.get(url);
+  const url = `${API}/${SID()}/values/${range}?key=${KEY()}`;
+  const res = await axios.get(url);
   return (res.data.values || []).map((r, i) => ({
     _row:          i + 2,
     id:            r[0] || '',
@@ -41,39 +40,27 @@ async function getConversationById(id) {
   return rows.find(r => r.id === id) || null;
 }
 
-// ─── ESCRITA (via N8N webhook) ────────────────────────────────────────────────
-// O app chama o N8N, e o N8N escreve na planilha.
-// Configure o webhook no N8N conforme o README.
-
-const N8N_SHEETS = () => process.env.N8N_SHEETS_WEBHOOK;
-
 async function n8nWrite(payload) {
-  if (!N8N_SHEETS()) throw new Error('N8N_SHEETS_WEBHOOK não configurado');
-  const res = await axios.post(N8N_SHEETS(), payload, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return res.data;
+  try {
+    await axios.post(N8N(), payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+  } catch(e) {
+    console.error('[n8nWrite] erro:', e.message);
+    throw e;
+  }
 }
 
 async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
   await n8nWrite({
-    acao:      'criar',
+    acao:         'criar',
     id,
     telefone,
-    nome:      nome || 'Cliente',
-    status:    'aguardando',
-    resumo_ia: resumo_ia || '',
-    historico: JSON.stringify(historico || []),
-    atualizado_em: new Date().toISOString(),
-  });
-}
-
-async function updateConversation(id, fields) {
-  await n8nWrite({
-    acao: 'atualizar',
-    id,
-    ...fields,
-    historico: fields.historico ? JSON.stringify(fields.historico) : undefined,
+    nome:         nome || 'Cliente',
+    status:       'aguardando',
+    resumo_ia:    resumo_ia || '',
+    historico:    JSON.stringify(historico || []),
     atualizado_em: new Date().toISOString(),
   });
 }
@@ -90,16 +77,24 @@ async function appendMessage(id, mensagem) {
     arquivo: mensagem.arquivo || undefined,
   });
 
-  await updateConversation(id, {
-    status:   conv.status === 'aguardando' ? 'em_atendimento' : conv.status,
-    historico,
+  await n8nWrite({
+    acao:         'atualizar',
+    id,
+    status:       conv.status === 'aguardando' ? 'em_atendimento' : conv.status,
+    historico:    JSON.stringify(historico),
+    atualizado_em: new Date().toISOString(),
   });
 
   return { ...conv, historico };
 }
 
 async function setStatus(id, status) {
-  await updateConversation(id, { status });
+  await n8nWrite({
+    acao:         'atualizar',
+    id,
+    status,
+    atualizado_em: new Date().toISOString(),
+  });
 }
 
 function safeJSON(str) {
