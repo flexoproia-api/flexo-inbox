@@ -55,14 +55,13 @@ function checkSecret(req, res, next) {
   next();
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
-
 app.get('/api/conversations', async (req, res) => {
   try {
     const { telefone } = req.query;
     let convs = await sheets.getPendingConversations();
     if (telefone) {
-      convs = convs.filter(c => c.telefone === telefone);
+      const tel = telefone.replace(/\D/g, '');
+      convs = convs.filter(c => c.telefone.replace(/\D/g, '') === tel);
     }
     res.json({ ok: true, data: convs });
   } catch (e) {
@@ -156,8 +155,6 @@ app.post('/api/set-atendente', async (req, res) => {
   }
 });
 
-// ─── WEBHOOKS ─────────────────────────────────────────────────────────────────
-
 app.post('/webhook/incoming', checkSecret, async (req, res) => {
   const { telefone, texto, hora, arquivo } = req.body;
   if (!telefone) return res.status(400).json({ ok: false, error: 'telefone obrigatório' });
@@ -190,8 +187,6 @@ app.post('/webhook/new-conversation', checkSecret, async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
-
-// ─── HEALTH + SPA ─────────────────────────────────────────────────────────────
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), ts: new Date().toISOString() });
