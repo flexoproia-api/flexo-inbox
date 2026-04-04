@@ -131,7 +131,7 @@ app.post('/webhook/incoming', checkSecret, async (req, res) => {
     const conv = await sheets.getConversationByPhone(telefone);
     if (!conv) return res.json({ ok: false, message: 'Sem conversa ativa para esse número' });
     const horaFmt = hora || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const updated = await sheets.appendMessage(conv.id, {
+    await sheets.appendMessage(conv.id, {
       de: 'cliente',
       texto: texto || '[mídia]',
       hora: horaFmt,
@@ -172,7 +172,7 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Flexo Inbox rodando na porta ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health\n`);
 });
