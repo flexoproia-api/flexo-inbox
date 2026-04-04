@@ -88,7 +88,10 @@ app.post('/api/send', async (req, res) => {
     const conv = await sheets.getConversationById(id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
     await meta.sendText(conv.telefone, texto);
-    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    // FIX: horário Brasília
+    const hora = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
     const updated = await sheets.appendMessage(id, { de: 'humano', texto, hora, atendente: atendente || '' });
     wsManager.notifyConversation(id, { action: 'new_message', message: { de: 'humano', texto, hora, atendente: atendente || '' } });
     res.json({ ok: true, data: updated });
@@ -109,7 +112,10 @@ app.post('/api/send-file', upload.single('file'), async (req, res) => {
     const fileName = req.file.originalname;
     await meta.sendFile(conv.telefone, filePath, mimeType, caption || fileName);
     const fileUrl = `${process.env.PUBLIC_URL || ''}/uploads/${req.file.filename}`;
-    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    // FIX: horário Brasília
+    const hora = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
     const updated = await sheets.appendMessage(id, {
       de: 'humano', texto: caption || `[arquivo] ${fileName}`,
       hora, atendente: atendente || '',
@@ -147,6 +153,8 @@ app.post('/api/set-atendente', async (req, res) => {
   if (!id || !atendente) return res.status(400).json({ ok: false, error: 'id e atendente obrigatórios' });
   try {
     await sheets.setAtendente(id, atendente);
+    // FIX: garante status em_atendimento quando atendente assume a conversa
+    await sheets.setStatus(id, 'em_atendimento');
     wsManager.broadcast({ type: 'conv_updated', convId: id });
     res.json({ ok: true });
   } catch (e) {
@@ -161,7 +169,10 @@ app.post('/webhook/incoming', checkSecret, async (req, res) => {
   try {
     const conv = await sheets.getConversationByPhone(telefone);
     if (!conv) return res.json({ ok: false, message: 'Sem conversa ativa' });
-    const horaFmt = hora || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    // FIX: horário Brasília
+    const horaFmt = hora || new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
     await sheets.appendMessage(conv.id, { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo: arquivo || undefined });
     wsManager.notifyConversation(conv.id, { action: 'new_message', message: { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo } });
     wsManager.broadcast({ type: 'conv_updated', convId: conv.id });
