@@ -27,11 +27,6 @@ async function getAllAtendimentos() {
   }));
 }
 
-async function getAtendimentos(telefone) {
-  const rows = await getAllAtendimentos();
-  return rows.filter(r => r.telefone === telefone);
-}
-
 async function getPendingConversations() {
   const rows = await getAllAtendimentos();
   return rows.filter(r => r.status === 'aguardando' || r.status === 'em_atendimento');
@@ -63,13 +58,15 @@ async function n8nWrite(payload) {
 }
 
 async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
-  const anteriores = await getAtendimentos(telefone);
+  const todos = await getAllAtendimentos();
+  const anteriores = todos.filter(r => r.telefone === telefone);
   const numero = anteriores.length + 1;
 
   await n8nWrite({
     acao:               'criar_atendimento',
     id,
     telefone,
+    nome:               nome || 'Cliente',
     status:             'aguardando',
     resumo_ia:          resumo_ia || '',
     historico:          JSON.stringify(historico || []),
@@ -83,16 +80,15 @@ async function appendMessage(id, mensagem) {
   const conv = await getConversationById(id);
   if (!conv) throw new Error(`Conversa ${id} não encontrada`);
 
-  // Garante que historico é sempre array
   const historico = Array.isArray(conv.historico) ? conv.historico : [];
   const hora = mensagem.hora || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   historico.push({
-    de:       mensagem.de,
-    texto:    mensagem.texto,
+    de:        mensagem.de,
+    texto:     mensagem.texto,
     hora,
     atendente: mensagem.atendente || '',
-    arquivo:  mensagem.arquivo || undefined,
+    arquivo:   mensagem.arquivo || undefined,
   });
 
   await n8nWrite({
@@ -109,7 +105,7 @@ async function appendMessage(id, mensagem) {
     telefone:           conv.telefone,
     data_hora:          new Date().toISOString(),
     atendente:          mensagem.atendente || conv.atendente || '',
-    mensagem_cliente:   (mensagem.de === 'cliente') ? mensagem.texto : '',
+    mensagem_cliente:   mensagem.de === 'cliente' ? mensagem.texto : '',
     resposta_atendente: (mensagem.de === 'humano' || mensagem.de === 'atendente') ? mensagem.texto : '',
   });
 
@@ -136,7 +132,7 @@ async function setStatus(id, status) {
 
 function safeJSON(str) {
   if (Array.isArray(str)) return str;
-  try { 
+  try {
     const parsed = JSON.parse(str);
     return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
@@ -147,7 +143,6 @@ module.exports = {
   getPendingConversations,
   getConversationByPhone,
   getConversationById,
-  getAtendimentos,
   createConversation,
   appendMessage,
   setAtendente,
