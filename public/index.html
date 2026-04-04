@@ -280,7 +280,6 @@ function connectWS() {
       const msg = JSON.parse(e.data);
       if (msg.type === 'update' && msg.convId) {
         if (msg.action === 'new_message' && msg.convId === activeId) {
-          // FIX: só adiciona via WS, não duplica com o otimista
           appendMsgDOM(msg.message);
         } else if (msg.action === 'new_message') {
           unread[msg.convId] = (unread[msg.convId] || 0) + 1;
@@ -298,7 +297,7 @@ function connectWS() {
         toast(`🆕 Nova conversa: ${msg.nome || msg.telefone || 'Cliente'}`, 'ok');
         loadConversations();
       }
-      // FIX: conv_updated só recarrega se não for a conversa ativa (evita sumir do sidebar)
+      // FIX: conv_updated só recarrega se não for a conversa ativa
       if (msg.type === 'conv_updated' && msg.convId !== activeId) loadConversations();
       if (msg.type === 'conv_finished') loadConversations();
     } catch {}
@@ -321,7 +320,15 @@ async function loadConversations() {
   try {
     const res  = await fetch('/api/conversations');
     const body = await res.json();
-    convs = body.data || [];
+    let novas = body.data || [];
+
+    // FIX: preserva conversa ativa mesmo que não venha do Sheets
+    if (activeId && !novas.find(c => c.id === activeId)) {
+      const ativa = convs.find(c => c.id === activeId);
+      if (ativa) novas = [ativa, ...novas];
+    }
+
+    convs = novas;
     renderSidebar();
     document.getElementById('last-update').textContent =
       'às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
@@ -462,7 +469,7 @@ function msgHTML(m) {
 
 function appendMsgDOM(m) {
   const box = document.getElementById('messages');
-  // FIX: evita duplicar — checa se última mensagem já é igual
+  // FIX: evita duplicar
   const last = box.lastElementChild;
   if (last) {
     const lastTexto = last.querySelector('.bubble')?.textContent?.trim();
@@ -486,7 +493,7 @@ async function sendMsg() {
   if (!texto && !selFile) return;
   const btn = document.getElementById('send-btn');
   btn.disabled = true;
-  // FIX: remove appendMsgDOM otimista — o WS vai trazer a mensagem
+  // FIX: sem appendMsgDOM otimista — WS traz a mensagem
   input.value = '';
   input.style.height = 'auto';
   try {
