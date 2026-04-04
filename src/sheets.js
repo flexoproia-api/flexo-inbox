@@ -1,31 +1,18 @@
-const { google } = require('googleapis');
+const axios = require('axios');
 
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
+const API  = 'https://sheets.googleapis.com/v4/spreadsheets';
+const KEY  = () => process.env.GOOGLE_API_KEY;
+const SID  = () => process.env.SHEETS_ID;
+const TAB  = () => process.env.SHEETS_TAB || 'atendimentos';
 
-function getAuth() {
-  return new google.auth.JWT(
-    process.env.GOOGLE_CLIENT_EMAIL,
-    null,
-    process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    SCOPES
-  );
-}
-
-function getSheets() {
-  return google.sheets({ version: 'v4', auth: getAuth() });
-}
-
-const TAB = () => process.env.SHEETS_TAB || 'atendimentos';
-const SID = () => process.env.SHEETS_ID;
+// ─── LEITURA (via API Key pública) ───────────────────────────────────────────
 
 async function getAllRows() {
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SID(),
-    range: `${TAB()}!A2:G1000`,
-  });
+  const range = encodeURIComponent(`${TAB()}!A2:G1000`);
+  const url   = `${API}/${SID()}/values/${range}?key=${KEY()}`;
+  const res   = await axios.get(url);
   return (res.data.values || []).map((r, i) => ({
-    _row: i + 2,
+    _row:          i + 2,
     id:            r[0] || '',
     telefone:      r[1] || '',
     nome:          r[2] || 'Cliente',
@@ -54,55 +41,45 @@ async function getConversationById(id) {
   return rows.find(r => r.id === id) || null;
 }
 
+// ─── ESCRITA (via N8N webhook) ────────────────────────────────────────────────
+// O app chama o N8N, e o N8N escreve na planilha.
+// Configure o webhook no N8N conforme o README.
+
+const N8N_SHEETS = () => process.env.N8N_SHEETS_WEBHOOK;
+
+async function n8nWrite(payload) {
+  if (!N8N_SHEETS()) throw new Error('N8N_SHEETS_WEBHOOK não configurado');
+  const res = await axios.post(N8N_SHEETS(), payload, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.data;
+}
+
 async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
-  const sheets = getSheets();
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SID(),
-    range: `${TAB()}!A:G`,
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: [[
-        id,
-        telefone,
-        nome,
-        'aguardando',
-        resumo_ia || '',
-        JSON.stringify(historico || []),
-        new Date().toISOString(),
-      ]],
-    },
+  await n8nWrite({
+    acao:      'criar',
+    id,
+    telefone,
+    nome:      nome || 'Cliente',
+    status:    'aguardando',
+    resumo_ia: resumo_ia || '',
+    historico: JSON.stringify(historico || []),
+    atualizado_em: new Date().toISOString(),
   });
 }
 
-async function updateConversation(rowIndex, fields) {
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SID(),
-    range: `${TAB()}!A${rowIndex}:G${rowIndex}`,
-  });
-  const cur = (res.data.values || [[]])[0] || [];
-
-  const newRow = [
-    fields.id        !== undefined ? fields.id        : (cur[0] || ''),
-    fields.telefone  !== undefined ? fields.telefone  : (cur[1] || ''),
-    fields.nome      !== undefined ? fields.nome      : (cur[2] || ''),
-    fields.status    !== undefined ? fields.status    : (cur[3] || ''),
-    fields.resumo_ia !== undefined ? fields.resumo_ia : (cur[4] || ''),
-    fields.historico !== undefined ? JSON.stringify(fields.historico) : (cur[5] || '[]'),
-    new Date().toISOString(),
-  ];
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SID(),
-    range: `${TAB()}!A${rowIndex}:G${rowIndex}`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [newRow] },
+async function updateConversation(id, fields) {
+  await n8nWrite({
+    acao: 'atualizar',
+    id,
+    ...fields,
+    historico: fields.historico ? JSON.stringify(fields.historico) : undefined,
+    atualizado_em: new Date().toISOString(),
   });
 }
 
 async function appendMessage(id, mensagem) {
-  const rows = await getAllRows();
-  const conv = rows.find(r => r.id === id);
+  const conv = await getConversationById(id);
   if (!conv) throw new Error(`Conversa ${id} não encontrada`);
 
   const historico = conv.historico;
@@ -113,8 +90,8 @@ async function appendMessage(id, mensagem) {
     arquivo: mensagem.arquivo || undefined,
   });
 
-  await updateConversation(conv._row, {
-    status: conv.status === 'aguardando' ? 'em_atendimento' : conv.status,
+  await updateConversation(id, {
+    status:   conv.status === 'aguardando' ? 'em_atendimento' : conv.status,
     historico,
   });
 
@@ -122,10 +99,7 @@ async function appendMessage(id, mensagem) {
 }
 
 async function setStatus(id, status) {
-  const rows = await getAllRows();
-  const conv = rows.find(r => r.id === id);
-  if (!conv) throw new Error(`Conversa ${id} não encontrada`);
-  await updateConversation(conv._row, { status });
+  await updateConversation(id, { status });
 }
 
 function safeJSON(str) {
