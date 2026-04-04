@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -281,10 +280,11 @@ function connectWS() {
       const msg = JSON.parse(e.data);
       if (msg.type === 'update' && msg.convId) {
         if (msg.action === 'new_message' && msg.convId === activeId) {
+          // FIX: só adiciona via WS, não duplica com o otimista
           appendMsgDOM(msg.message);
         } else if (msg.action === 'new_message') {
           unread[msg.convId] = (unread[msg.convId] || 0) + 1;
-          renderSidebar();
+          loadConversations();
           if (Notification.permission === 'granted') {
             new Notification('Nova mensagem — Flexo Inbox', { body: msg.message?.texto || '' });
           }
@@ -298,7 +298,9 @@ function connectWS() {
         toast(`🆕 Nova conversa: ${msg.nome || msg.telefone || 'Cliente'}`, 'ok');
         loadConversations();
       }
-      if (msg.type === 'conv_updated' || msg.type === 'conv_finished') loadConversations();
+      // FIX: conv_updated só recarrega se não for a conversa ativa (evita sumir do sidebar)
+      if (msg.type === 'conv_updated' && msg.convId !== activeId) loadConversations();
+      if (msg.type === 'conv_finished') loadConversations();
     } catch {}
   };
   ws.onclose = () => { setWS(false); setTimeout(connectWS, 3000); };
@@ -353,7 +355,6 @@ function renderSidebar() {
     const locked    = c.atendente && c.atendente !== MEU_NOME;
     const nUnread   = unread[c.id] || 0;
     const hasUnread = nUnread > 0;
-    // Mostra nome se disponível e diferente de "Cliente WhatsApp", senão mostra telefone formatado
     const nomePrincipal = (c.nome && c.nome !== 'Cliente WhatsApp' && c.nome !== 'Cliente')
       ? c.nome : fmtTel(c.telefone);
     const atendInfo = c.atendente ? `<div class="conv-atend">👤 ${esc(c.atendente)}</div>` : '';
@@ -461,6 +462,14 @@ function msgHTML(m) {
 
 function appendMsgDOM(m) {
   const box = document.getElementById('messages');
+  // FIX: evita duplicar — checa se última mensagem já é igual
+  const last = box.lastElementChild;
+  if (last) {
+    const lastTexto = last.querySelector('.bubble')?.textContent?.trim();
+    const lastMeta  = last.querySelector('.msg-meta')?.textContent?.trim();
+    const mQuem = (m.de === 'humano' || m.de === 'atendente') ? (m.atendente || MEU_NOME || 'Você') : 'Cliente';
+    if (lastTexto === (m.texto||'').trim() && lastMeta?.includes(mQuem)) return;
+  }
   const div = document.createElement('div');
   div.innerHTML = msgHTML(m);
   box.appendChild(div.firstChild);
@@ -477,8 +486,7 @@ async function sendMsg() {
   if (!texto && !selFile) return;
   const btn = document.getElementById('send-btn');
   btn.disabled = true;
-  const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
-  if (texto) appendMsgDOM({ de: 'humano', texto, hora, atendente: MEU_NOME });
+  // FIX: remove appendMsgDOM otimista — o WS vai trazer a mensagem
   input.value = '';
   input.style.height = 'auto';
   try {
@@ -500,11 +508,15 @@ async function sendMsg() {
     const body = await res.json();
     if (!body.ok) throw new Error(body.error || 'Erro');
     removeFile();
-  } catch (e) { toast('Erro ao enviar: ' + e.message, 'error'); }
-  finally { btn.disabled = false; input.focus(); }
+  } catch (e) {
+    toast('Erro ao enviar: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
 }
 
-// ─── FINALIZAR (otimista) ─────────────────────────────────────────────────────
+// ─── FINALIZAR ────────────────────────────────────────────────────────────────
 async function finishConv() {
   if (!activeId) return;
   const conv = convs.find(c => c.id === activeId);
@@ -512,14 +524,11 @@ async function finishConv() {
   if (!confirm(`Finalizar atendimento de ${nome}?\nA IA voltará a responder este número.`)) return;
 
   const idParaFinalizar = activeId;
-
-  // Fecha imediatamente (otimista)
   toast('✅ Atendimento finalizado! IA liberada.', 'ok');
   resetChat();
   convs = convs.filter(c => c.id !== idParaFinalizar);
   renderSidebar();
 
-  // Manda o request em background
   fetch('/api/finish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -543,15 +552,10 @@ function removeFile() {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-function onKey(e) { if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} }
+function onKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} }
 function autoGrow(el) { el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'; }
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function trunc(s,n) { return (s||'').length>n?s.slice(0,n)+'…':(s||''); }
-function fmtPhone(p) {
-  const d=(p||'').replace(/\D/g,'');
-  if(d.length>=12) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;
-  return p||'';
-}
 function fmtTime(iso) {
   if(!iso) return '';
   try {
@@ -575,4 +579,3 @@ window.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
-```
