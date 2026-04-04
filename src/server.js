@@ -60,8 +60,8 @@ app.get('/api/conversations', async (req, res) => {
     const { telefone } = req.query;
     let convs = await sheets.getPendingConversations();
     if (telefone) {
-      const tel = telefone.replace(/\D/g, '');
-      convs = convs.filter(c => c.telefone.replace(/\D/g, '') === tel);
+      const tel = String(telefone).replace(/\D/g, '');
+      convs = convs.filter(c => String(c.telefone).replace(/\D/g, '') === tel);
     }
     res.json({ ok: true, data: convs });
   } catch (e) {
