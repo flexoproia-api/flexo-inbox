@@ -1,182 +1,210 @@
-const axios = require('axios');
+require('dotenv').config();
 
-const API = 'https://sheets.googleapis.com/v4/spreadsheets';
-const KEY = () => process.env.GOOGLE_API_KEY;
-const SID = () => process.env.SHEETS_ID;
-const N8N = () => process.env.N8N_SHEETS_WEBHOOK;
+process.on('uncaughtException', (err) => {
+  console.error('ERRO FATAL:', err.message);
+  console.error(err.stack);
+});
 
-// Horário de Brasília
-function horaBrasilia() {
-  return new Date().toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  });
-}
+process.on('unhandledRejection', (reason) => {
+  console.error('PROMISE REJEITADA:', reason);
+});
 
-function isoAgora() {
-  return new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + '-03:00';
-}
+const express  = require('express');
+const http     = require('http');
+const path     = require('path');
+const fs       = require('fs');
+const multer   = require('multer');
+const cors     = require('cors');
+const { v4: uuidv4 } = require('uuid');
 
-async function getRows(aba, colunas) {
-  const range = encodeURIComponent(`${aba}!A2:${colunas}1000`);
-  const url = `${API}/${SID()}/values/${range}?key=${KEY()}`;
-  const res = await axios.get(url);
-  return res.data.values || [];
-}
+const sheets    = require('./sheets');
+const meta      = require('./meta');
+const wsManager = require('./ws-manager');
 
-async function getAllAtendimentos() {
-  const rows = await getRows('atendimentos', 'I');
-  return rows.map((r, i) => ({
-    _row:               i + 2,
-    id:                 r[0] || '',
-    telefone:           r[1] || '',
-    nome:               r[2] || 'Cliente',
-    status:             r[3] || '',
-    resumo_ia:          r[4] || '',
-    historico:          safeJSON(r[5] || '[]'),
-    atualizado_em:      r[6] || '',
-    atendente:          r[7] || '',
-    numero_atendimento: parseInt(r[8] || '0'),
-  }));
-}
+const app    = express();
+const server = http.createServer(app);
 
-async function getPendingConversations() {
-  const rows = await getAllAtendimentos();
-  return rows.filter(r => r.status === 'aguardando' || r.status === 'em_atendimento');
-}
+wsManager.init(server);
 
-async function getConversationByPhone(telefone) {
-  const rows = await getAllAtendimentos();
-  return rows.find(r =>
-    r.telefone === telefone &&
-    (r.status === 'aguardando' || r.status === 'em_atendimento')
-  ) || null;
-}
+const UPLOAD_DIR = path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-async function getConversationById(id) {
-  const rows = await getAllAtendimentos();
-  return rows.find(r => r.id === id) || null;
-}
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename:    (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${uuidv4().slice(0,8)}${ext}`);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: (parseInt(process.env.MAX_FILE_MB) || 25) * 1024 * 1024 },
+});
 
-async function n8nWrite(payload) {
-  try {
-    await axios.post(N8N(), payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 10000,
-    });
-  } catch(e) {
-    console.error('[n8nWrite] erro:', e.message);
-    throw e;
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+function checkSecret(req, res, next) {
+  const token = req.headers['x-webhook-secret'] || req.query.secret;
+  if (token !== process.env.WEBHOOK_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
+  next();
 }
 
-async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
-  const todos = await getAllAtendimentos();
-  const anteriores = todos.filter(r => r.telefone === telefone);
-  const numero = anteriores.length + 1;
-
-  await n8nWrite({
-    acao:               'criar_atendimento',
-    id,
-    telefone,
-    nome:               nome || 'Cliente',
-    status:             'aguardando',
-    resumo_ia:          resumo_ia || '',
-    historico:          JSON.stringify(historico || []),
-    atualizado_em:      isoAgora(),
-    atendente:          '',
-    numero_atendimento: numero,
-  });
-}
-
-async function appendMessage(id, mensagem) {
-  const conv = await getConversationById(id);
-  if (!conv) throw new Error(`Conversa ${id} não encontrada`);
-
-  const historico = Array.isArray(conv.historico) ? conv.historico : [];
-  const hora = mensagem.hora || horaBrasilia();
-
-  const novaMensagem = {
-    de:        mensagem.de,
-    texto:     mensagem.texto,
-    hora,
-    atendente: mensagem.atendente || '',
-    ...(mensagem.arquivo ? { arquivo: mensagem.arquivo } : {}),
-  };
-
-  historico.push(novaMensagem);
-
-  // FIX: status aceita vazio ou 'aguardando' como gatilho para em_atendimento
-  const novoStatus = (conv.status === 'aguardando' || conv.status === '')
-    ? 'em_atendimento'
-    : conv.status;
-
-  // FIX: atualiza status separado do historico
-  await n8nWrite({
-    acao:          'atualizar_atendimento',
-    id,
-    status:        novoStatus,
-    atualizado_em: isoAgora(),
-  });
-
-  // FIX: atualiza historico em nó separado
-  await n8nWrite({
-    acao:          'atualizar_historico',
-    id,
-    historico:     JSON.stringify(historico),
-    atualizado_em: isoAgora(),
-  });
-
-  // gravar_historico só para mensagens humanas
-  if (mensagem.de === 'humano' || mensagem.de === 'atendente') {
-    await n8nWrite({
-      acao:               'gravar_historico',
-      id_atendimento:     id,
-      telefone:           conv.telefone,
-      data_hora:          isoAgora(),
-      atendente:          mensagem.atendente || conv.atendente || '',
-      mensagem_cliente:   '',
-      resposta_atendente: mensagem.texto,
-    });
-  }
-
-  return { ...conv, historico };
-}
-
-async function setAtendente(id, atendente) {
-  await n8nWrite({
-    acao:          'atualizar_atendimento',
-    id,
-    atendente,
-    atualizado_em: isoAgora(),
-  });
-}
-
-async function setStatus(id, status) {
-  await n8nWrite({
-    acao:          'atualizar_atendimento',
-    id,
-    status,
-    atualizado_em: isoAgora(),
-  });
-}
-
-function safeJSON(str) {
-  if (Array.isArray(str)) return str;
+app.get('/api/conversations', async (req, res) => {
   try {
-    const parsed = JSON.parse(str);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
+    const { telefone } = req.query;
+    let convs = await sheets.getPendingConversations();
+    if (telefone) {
+      const tel = String(telefone).replace(/\D/g, '');
+      convs = convs.filter(c => String(c.telefone).replace(/\D/g, '') === tel);
+    }
+    res.json({ ok: true, data: convs });
+  } catch (e) {
+    console.error('[GET /api/conversations]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
-module.exports = {
-  getAllAtendimentos,
-  getPendingConversations,
-  getConversationByPhone,
-  getConversationById,
-  createConversation,
-  appendMessage,
-  setAtendente,
-  setStatus,
-};
+app.get('/api/conversations/:id', async (req, res) => {
+  try {
+    const conv = await sheets.getConversationById(req.params.id);
+    if (!conv) return res.status(404).json({ ok: false, error: 'Não encontrado' });
+    res.json({ ok: true, data: conv });
+  } catch (e) {
+    console.error('[GET /api/conversations/:id]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/send', async (req, res) => {
+  const { id, texto, atendente } = req.body;
+  if (!id || !texto) return res.status(400).json({ ok: false, error: 'id e texto obrigatórios' });
+  try {
+    const conv = await sheets.getConversationById(id);
+    if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
+    await meta.sendText(conv.telefone, texto);
+    const hora = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
+    const updated = await sheets.appendMessage(id, { de: 'humano', texto, hora, atendente: atendente || '' });
+    wsManager.notifyConversation(id, { action: 'new_message', message: { de: 'humano', texto, hora, atendente: atendente || '' } });
+    res.json({ ok: true, data: updated });
+  } catch (e) {
+    console.error('[POST /api/send]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/send-file', upload.single('file'), async (req, res) => {
+  const { id, caption, atendente } = req.body;
+  if (!id || !req.file) return res.status(400).json({ ok: false, error: 'id e arquivo obrigatórios' });
+  try {
+    const conv = await sheets.getConversationById(id);
+    if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
+    const filePath = req.file.path;
+    const mimeType = req.file.mimetype;
+    const fileName = req.file.originalname;
+    await meta.sendFile(conv.telefone, filePath, mimeType, caption || fileName);
+    const fileUrl = `${process.env.PUBLIC_URL || ''}/uploads/${req.file.filename}`;
+    const hora = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
+    const updated = await sheets.appendMessage(id, {
+      de: 'humano', texto: caption || `[arquivo] ${fileName}`,
+      hora, atendente: atendente || '',
+      arquivo: { nome: fileName, url: fileUrl, tipo: mimeType },
+    });
+    wsManager.notifyConversation(id, {
+      action: 'new_message',
+      message: { de: 'humano', texto: caption || `[arquivo] ${fileName}`, hora, atendente: atendente || '', arquivo: { nome: fileName, url: fileUrl } },
+    });
+    res.json({ ok: true, fileUrl, data: updated });
+  } catch (e) {
+    console.error('[POST /api/send-file]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/finish', async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+  try {
+    const conv = await sheets.getConversationById(id);
+    if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
+    await sheets.setStatus(id, 'finalizado');
+    wsManager.notifyConversation(id, { action: 'finished' });
+    wsManager.broadcast({ type: 'conv_finished', convId: id });
+    res.json({ ok: true, message: 'Atendimento finalizado. IA liberada.' });
+  } catch (e) {
+    console.error('[POST /api/finish]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/set-atendente', async (req, res) => {
+  const { id, atendente } = req.body;
+  if (!id || !atendente) return res.status(400).json({ ok: false, error: 'id e atendente obrigatórios' });
+  try {
+    await sheets.setAtendente(id, atendente);
+    await sheets.setStatus(id, 'em_atendimento');
+    wsManager.broadcast({ type: 'conv_updated', convId: id });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[POST /api/set-atendente]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/webhook/incoming', checkSecret, async (req, res) => {
+  const { telefone, texto, hora, arquivo } = req.body;
+  if (!telefone) return res.status(400).json({ ok: false, error: 'telefone obrigatório' });
+  try {
+    const conv = await sheets.getConversationByPhone(telefone);
+    if (!conv) return res.json({ ok: false, message: 'Sem conversa ativa' });
+    const horaFmt = hora || new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
+    });
+    await sheets.appendMessage(conv.id, { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo: arquivo || undefined });
+    wsManager.notifyConversation(conv.id, { action: 'new_message', message: { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo } });
+    wsManager.broadcast({ type: 'conv_updated', convId: conv.id });
+    res.json({ ok: true, convId: conv.id });
+  } catch (e) {
+    console.error('[POST /webhook/incoming]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/webhook/new-conversation', checkSecret, async (req, res) => {
+  const { telefone, nome, resumo_ia, historico } = req.body;
+  if (!telefone) return res.status(400).json({ ok: false, error: 'telefone obrigatório' });
+  try {
+    const existing = await sheets.getConversationByPhone(telefone);
+    if (existing) return res.json({ ok: true, convId: existing.id, message: 'Conversa já existe' });
+    const id = uuidv4();
+    await sheets.createConversation({ id, telefone, nome: nome || 'Cliente', resumo_ia: resumo_ia || '', historico: historico || [] });
+    wsManager.broadcast({ type: 'new_conv', convId: id, nome: nome || 'Cliente', telefone });
+    res.json({ ok: true, convId: id });
+  } catch (e) {
+    console.error('[POST /webhook/new-conversation]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ ok: true, uptime: process.uptime(), ts: new Date().toISOString() });
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Flexo Inbox rodando na porta ${PORT}`);
+  console.log(`   Health: http://localhost:${PORT}/health\n`);
+});
