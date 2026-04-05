@@ -97,8 +97,6 @@ async function appendMessage(id, mensagem) {
   const historico = Array.isArray(conv.historico) ? conv.historico : [];
   const hora = mensagem.hora || horaBrasilia();
 
-  // FIX: evita duplicar — só adiciona se não for mensagem do cliente via webhook/incoming
-  // (o webhook/incoming já chama appendMessage, não duplicar via gravar_historico)
   const novaMensagem = {
     de:        mensagem.de,
     texto:     mensagem.texto,
@@ -109,20 +107,28 @@ async function appendMessage(id, mensagem) {
 
   historico.push(novaMensagem);
 
-  // FIX: status — aceita vazio ou 'aguardando' como gatilho para em_atendimento
+  // FIX: status aceita vazio ou 'aguardando' como gatilho para em_atendimento
   const novoStatus = (conv.status === 'aguardando' || conv.status === '')
     ? 'em_atendimento'
     : conv.status;
 
+  // FIX: atualiza status separado do historico
   await n8nWrite({
     acao:          'atualizar_atendimento',
     id,
     status:        novoStatus,
+    atualizado_em: isoAgora(),
+  });
+
+  // FIX: atualiza historico em nó separado
+  await n8nWrite({
+    acao:          'atualizar_historico',
+    id,
     historico:     JSON.stringify(historico),
     atualizado_em: isoAgora(),
   });
 
-  // gravar_historico só para mensagens humanas (evita duplicar no histórico separado)
+  // gravar_historico só para mensagens humanas
   if (mensagem.de === 'humano' || mensagem.de === 'atendente') {
     await n8nWrite({
       acao:               'gravar_historico',
