@@ -17,7 +17,7 @@ const multer   = require('multer');
 const cors     = require('cors');
 const { v4: uuidv4 } = require('uuid');
 
-const sheets    = require('./sheets');
+const db        = require('./db');
 const meta      = require('./meta');
 const wsManager = require('./ws-manager');
 
@@ -55,10 +55,78 @@ function checkSecret(req, res, next) {
   next();
 }
 
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
+
+app.post('/api/login', async (req, res) => {
+  const { email, senha } = req.body;
+  if (!email || !senha) return res.status(400).json({ ok: false, error: 'email e senha obrigatórios' });
+  try {
+    const atendente = await db.getAtendenteByEmail(email);
+    if (!atendente || atendente.senha !== senha) {
+      return res.status(401).json({ ok: false, error: 'Email ou senha incorretos' });
+    }
+    res.json({ ok: true, data: { id: atendente.id, nome: atendente.nome, email: atendente.email, cor: atendente.cor } });
+  } catch (e) {
+    console.error('[POST /api/login]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── ATENDENTES ──────────────────────────────────────────────────────────────
+
+app.get('/api/atendentes', async (req, res) => {
+  try {
+    const atendentes = await db.getAtendentes();
+    res.json({ ok: true, data: atendentes });
+  } catch (e) {
+    console.error('[GET /api/atendentes]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── CONTATOS ────────────────────────────────────────────────────────────────
+
+app.get('/api/contatos', async (req, res) => {
+  try {
+    const contatos = await db.getAllContatos();
+    res.json({ ok: true, data: contatos });
+  } catch (e) {
+    console.error('[GET /api/contatos]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/contatos', async (req, res) => {
+  const { telefone, nome, empresa } = req.body;
+  if (!telefone || !nome) return res.status(400).json({ ok: false, error: 'telefone e nome obrigatórios' });
+  try {
+    const contato = await db.createContato({ telefone, nome, empresa });
+    res.json({ ok: true, data: contato });
+  } catch (e) {
+    console.error('[POST /api/contatos]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/contatos/:telefone', async (req, res) => {
+  const { nome, empresa } = req.body;
+  if (!nome) return res.status(400).json({ ok: false, error: 'nome obrigatório' });
+  try {
+    const contato = await db.updateContato({ telefone: req.params.telefone, nome, empresa });
+    if (!contato) return res.status(404).json({ ok: false, error: 'Contato não encontrado' });
+    res.json({ ok: true, data: contato });
+  } catch (e) {
+    console.error('[PUT /api/contatos]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── CONVERSAS ───────────────────────────────────────────────────────────────
+
 app.get('/api/conversations', async (req, res) => {
   try {
     const { telefone } = req.query;
-    let convs = await sheets.getPendingConversations();
+    let convs = await db.getPendingConversations();
     if (telefone) {
       const tel = String(telefone).replace(/\D/g, '');
       convs = convs.filter(c => String(c.telefone).replace(/\D/g, '') === tel);
@@ -72,7 +140,7 @@ app.get('/api/conversations', async (req, res) => {
 
 app.get('/api/conversations/:id', async (req, res) => {
   try {
-    const conv = await sheets.getConversationById(req.params.id);
+    const conv = await db.getConversationById(req.params.id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Não encontrado' });
     res.json({ ok: true, data: conv });
   } catch (e) {
@@ -81,17 +149,30 @@ app.get('/api/conversations/:id', async (req, res) => {
   }
 });
 
+// Histórico completo de um telefone (todos os atendimentos anteriores)
+app.get('/api/historico/:telefone', async (req, res) => {
+  try {
+    const historico = await db.getHistoricoCompleto(req.params.telefone);
+    res.json({ ok: true, data: historico });
+  } catch (e) {
+    console.error('[GET /api/historico/:telefone]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── ENVIO DE MENSAGENS ──────────────────────────────────────────────────────
+
 app.post('/api/send', async (req, res) => {
   const { id, texto, atendente } = req.body;
   if (!id || !texto) return res.status(400).json({ ok: false, error: 'id e texto obrigatórios' });
   try {
-    const conv = await sheets.getConversationById(id);
+    const conv = await db.getConversationById(id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
     await meta.sendText(conv.telefone, texto);
     const hora = new Date().toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
     });
-    const updated = await sheets.appendMessage(id, { de: 'humano', texto, hora, atendente: atendente || '' });
+    const updated = await db.appendMessage(id, { de: 'humano', texto, hora, atendente: atendente || '' });
     wsManager.notifyConversation(id, { action: 'new_message', message: { de: 'humano', texto, hora, atendente: atendente || '' } });
     res.json({ ok: true, data: updated });
   } catch (e) {
@@ -104,7 +185,7 @@ app.post('/api/send-file', upload.single('file'), async (req, res) => {
   const { id, caption, atendente } = req.body;
   if (!id || !req.file) return res.status(400).json({ ok: false, error: 'id e arquivo obrigatórios' });
   try {
-    const conv = await sheets.getConversationById(id);
+    const conv = await db.getConversationById(id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
     const filePath = req.file.path;
     const mimeType = req.file.mimetype;
@@ -114,7 +195,7 @@ app.post('/api/send-file', upload.single('file'), async (req, res) => {
     const hora = new Date().toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
     });
-    const updated = await sheets.appendMessage(id, {
+    const updated = await db.appendMessage(id, {
       de: 'humano', texto: caption || `[arquivo] ${fileName}`,
       hora, atendente: atendente || '',
       arquivo: { nome: fileName, url: fileUrl, tipo: mimeType },
@@ -130,13 +211,15 @@ app.post('/api/send-file', upload.single('file'), async (req, res) => {
   }
 });
 
+// ─── FINALIZAR / ATENDENTE ───────────────────────────────────────────────────
+
 app.post('/api/finish', async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
   try {
-    const conv = await sheets.getConversationById(id);
+    const conv = await db.getConversationById(id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
-    await sheets.setStatus(id, 'finalizado');
+    await db.setStatus(id, 'finalizado');
     wsManager.notifyConversation(id, { action: 'finished' });
     wsManager.broadcast({ type: 'conv_finished', convId: id });
     res.json({ ok: true, message: 'Atendimento finalizado. IA liberada.' });
@@ -150,8 +233,8 @@ app.post('/api/set-atendente', async (req, res) => {
   const { id, atendente } = req.body;
   if (!id || !atendente) return res.status(400).json({ ok: false, error: 'id e atendente obrigatórios' });
   try {
-    await sheets.setAtendente(id, atendente);
-    await sheets.setStatus(id, 'em_atendimento');
+    await db.setAtendente(id, atendente);
+    await db.setStatus(id, 'em_atendimento');
     wsManager.broadcast({ type: 'conv_updated', convId: id });
     res.json({ ok: true });
   } catch (e) {
@@ -160,16 +243,18 @@ app.post('/api/set-atendente', async (req, res) => {
   }
 });
 
+// ─── WEBHOOKS ────────────────────────────────────────────────────────────────
+
 app.post('/webhook/incoming', checkSecret, async (req, res) => {
   const { telefone, texto, hora, arquivo } = req.body;
   if (!telefone) return res.status(400).json({ ok: false, error: 'telefone obrigatório' });
   try {
-    const conv = await sheets.getConversationByPhone(telefone);
+    const conv = await db.getConversationByPhone(telefone);
     if (!conv) return res.json({ ok: false, message: 'Sem conversa ativa' });
     const horaFmt = hora || new Date().toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
     });
-    await sheets.appendMessage(conv.id, { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo: arquivo || undefined });
+    await db.appendMessage(conv.id, { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo: arquivo || undefined });
     wsManager.notifyConversation(conv.id, { action: 'new_message', message: { de: 'cliente', texto: texto || '[mídia]', hora: horaFmt, arquivo } });
     wsManager.broadcast({ type: 'conv_updated', convId: conv.id });
     res.json({ ok: true, convId: conv.id });
@@ -183,10 +268,10 @@ app.post('/webhook/new-conversation', checkSecret, async (req, res) => {
   const { telefone, nome, resumo_ia, historico } = req.body;
   if (!telefone) return res.status(400).json({ ok: false, error: 'telefone obrigatório' });
   try {
-    const existing = await sheets.getConversationByPhone(telefone);
+    const existing = await db.getConversationByPhone(telefone);
     if (existing) return res.json({ ok: true, convId: existing.id, message: 'Conversa já existe' });
     const id = uuidv4();
-    await sheets.createConversation({ id, telefone, nome: nome || 'Cliente', resumo_ia: resumo_ia || '', historico: historico || [] });
+    await db.createConversation({ id, telefone, nome: nome || 'Cliente', resumo_ia: resumo_ia || '', historico: historico || [] });
     wsManager.broadcast({ type: 'new_conv', convId: id, nome: nome || 'Cliente', telefone });
     res.json({ ok: true, convId: id });
   } catch (e) {
@@ -194,6 +279,8 @@ app.post('/webhook/new-conversation', checkSecret, async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+// ─── HEALTH / FALLBACK ───────────────────────────────────────────────────────
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), ts: new Date().toISOString() });
