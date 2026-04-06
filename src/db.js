@@ -1,16 +1,9 @@
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
-
-pool.on('error', (err) => {
-  console.error('[DB] Erro inesperado no pool:', err.message);
-});
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 // ─── UTILITÁRIOS ────────────────────────────────────────────────────────────
 
@@ -28,124 +21,126 @@ function isoAgora() {
 
 async function getContatoByPhone(telefone) {
   const tel = String(telefone).replace(/\D/g, '');
-  const { rows } = await pool.query(
-    `SELECT * FROM contatos WHERE telefone = $1 LIMIT 1`,
-    [tel]
-  );
-  return rows[0] || null;
+  const { data, error } = await supabase
+    .from('contatos')
+    .select('*')
+    .eq('telefone', tel)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
 }
 
 async function createContato({ telefone, nome, empresa }) {
   const tel = String(telefone).replace(/\D/g, '');
-  const { rows } = await pool.query(
-    `INSERT INTO contatos (telefone, nome, empresa)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (telefone) DO UPDATE
-       SET nome = EXCLUDED.nome,
-           empresa = EXCLUDED.empresa,
-           atualizado_em = now()
-     RETURNING *`,
-    [tel, nome || 'Cliente', empresa || '']
-  );
-  return rows[0];
+  const { data, error } = await supabase
+    .from('contatos')
+    .upsert({ telefone: tel, nome: nome || 'Cliente', empresa: empresa || '', atualizado_em: isoAgora() }, { onConflict: 'telefone' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 async function updateContato({ telefone, nome, empresa }) {
   const tel = String(telefone).replace(/\D/g, '');
-  const { rows } = await pool.query(
-    `UPDATE contatos
-     SET nome = $2, empresa = $3, atualizado_em = now()
-     WHERE telefone = $1
-     RETURNING *`,
-    [tel, nome, empresa]
-  );
-  return rows[0] || null;
+  const { data, error } = await supabase
+    .from('contatos')
+    .update({ nome, empresa, atualizado_em: isoAgora() })
+    .eq('telefone', tel)
+    .select()
+    .single();
+  if (error) throw error;
+  return data || null;
 }
 
 async function getAllContatos() {
-  const { rows } = await pool.query(
-    `SELECT c.*, COUNT(a.id) as total_atendimentos
-     FROM contatos c
-     LEFT JOIN atendimentos a ON a.contato_id = c.id
-     GROUP BY c.id
-     ORDER BY c.atualizado_em DESC`
-  );
-  return rows;
+  const { data, error } = await supabase
+    .from('contatos')
+    .select('*')
+    .order('atualizado_em', { ascending: false });
+  if (error) throw error;
+  return data || [];
 }
 
 // ─── ATENDIMENTOS ────────────────────────────────────────────────────────────
 
 async function getAllAtendimentos() {
-  const { rows } = await pool.query(
-    `SELECT a.*, c.nome, c.empresa
-     FROM atendimentos a
-     LEFT JOIN contatos c ON c.id = a.contato_id
-     ORDER BY a.atualizado_em DESC`
-  );
-  return rows.map(r => ({
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('*, contatos(nome, empresa)')
+    .order('atualizado_em', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(r => ({
     ...r,
+    nome: r.contatos?.nome || 'Cliente',
+    empresa: r.contatos?.empresa || '',
     historico: Array.isArray(r.historico) ? r.historico : [],
   }));
 }
 
 async function getPendingConversations() {
-  const { rows } = await pool.query(
-    `SELECT a.*, c.nome, c.empresa
-     FROM atendimentos a
-     LEFT JOIN contatos c ON c.id = a.contato_id
-     WHERE a.status IN ('aguardando', 'em_atendimento')
-     ORDER BY a.atualizado_em DESC`
-  );
-  return rows.map(r => ({
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('*, contatos(nome, empresa)')
+    .in('status', ['aguardando', 'em_atendimento'])
+    .order('atualizado_em', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(r => ({
     ...r,
+    nome: r.contatos?.nome || 'Cliente',
+    empresa: r.contatos?.empresa || '',
     historico: Array.isArray(r.historico) ? r.historico : [],
   }));
 }
 
 async function getConversationByPhone(telefone) {
   const tel = String(telefone).replace(/\D/g, '');
-  const { rows } = await pool.query(
-    `SELECT a.*, c.nome, c.empresa
-     FROM atendimentos a
-     LEFT JOIN contatos c ON c.id = a.contato_id
-     WHERE a.telefone = $1
-       AND a.status IN ('aguardando', 'em_atendimento')
-     ORDER BY a.atualizado_em DESC
-     LIMIT 1`,
-    [tel]
-  );
-  if (!rows[0]) return null;
-  return { ...rows[0], historico: Array.isArray(rows[0].historico) ? rows[0].historico : [] };
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('*, contatos(nome, empresa)')
+    .eq('telefone', tel)
+    .in('status', ['aguardando', 'em_atendimento'])
+    .order('atualizado_em', { ascending: false })
+    .limit(1)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+  return {
+    ...data,
+    nome: data.contatos?.nome || 'Cliente',
+    empresa: data.contatos?.empresa || '',
+    historico: Array.isArray(data.historico) ? data.historico : [],
+  };
 }
 
 async function getConversationById(id) {
-  const { rows } = await pool.query(
-    `SELECT a.*, c.nome, c.empresa
-     FROM atendimentos a
-     LEFT JOIN contatos c ON c.id = a.contato_id
-     WHERE a.id = $1
-     LIMIT 1`,
-    [id]
-  );
-  if (!rows[0]) return null;
-  return { ...rows[0], historico: Array.isArray(rows[0].historico) ? rows[0].historico : [] };
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('*, contatos(nome, empresa)')
+    .eq('id', id)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+  return {
+    ...data,
+    nome: data.contatos?.nome || 'Cliente',
+    empresa: data.contatos?.empresa || '',
+    historico: Array.isArray(data.historico) ? data.historico : [],
+  };
 }
 
-// Busca TODO o histórico de atendimentos anteriores de um telefone
 async function getHistoricoCompleto(telefone) {
   const tel = String(telefone).replace(/\D/g, '');
-  const { rows } = await pool.query(
-    `SELECT a.id, a.status, a.criado_em, a.atualizado_em,
-            a.atendente, a.numero_atendimento, a.historico,
-            c.nome, c.empresa
-     FROM atendimentos a
-     LEFT JOIN contatos c ON c.id = a.contato_id
-     WHERE a.telefone = $1
-     ORDER BY a.criado_em ASC`,
-    [tel]
-  );
-  return rows.map(r => ({
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('*, contatos(nome, empresa)')
+    .eq('telefone', tel)
+    .order('criado_em', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(r => ({
     ...r,
+    nome: r.contatos?.nome || 'Cliente',
+    empresa: r.contatos?.empresa || '',
     historico: Array.isArray(r.historico) ? r.historico : [],
   }));
 }
@@ -153,144 +148,128 @@ async function getHistoricoCompleto(telefone) {
 async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
   const tel = String(telefone).replace(/\D/g, '');
 
-  // Garante que o contato existe
   const contato = await createContato({ telefone: tel, nome: nome || 'Cliente' });
 
-  // Conta atendimentos anteriores para numero_atendimento
-  const { rows: count } = await pool.query(
-    `SELECT COUNT(*) FROM atendimentos WHERE telefone = $1`,
-    [tel]
-  );
-  const numero = parseInt(count[0].count) + 1;
+  const { count } = await supabase
+    .from('atendimentos')
+    .select('*', { count: 'exact', head: true })
+    .eq('telefone', tel);
 
-  await pool.query(
-    `INSERT INTO atendimentos
-       (id, contato_id, telefone, status, resumo_ia, historico, numero_atendimento, atualizado_em)
-     VALUES ($1, $2, $3, 'aguardando', $4, $5, $6, now())
-     ON CONFLICT (id) DO NOTHING`,
-    [
+  const numero = (count || 0) + 1;
+
+  const { error } = await supabase
+    .from('atendimentos')
+    .upsert({
       id,
-      contato.id,
-      tel,
-      resumo_ia || '',
-      JSON.stringify(historico || []),
-      numero,
-    ]
-  );
+      contato_id: contato.id,
+      telefone: tel,
+      status: 'aguardando',
+      resumo_ia: resumo_ia || '',
+      historico: historico || [],
+      numero_atendimento: numero,
+      atualizado_em: isoAgora(),
+    }, { onConflict: 'id', ignoreDuplicates: true });
 
+  if (error) throw error;
   return { id, telefone: tel, nome: contato.nome, empresa: contato.empresa };
 }
 
 async function appendMessage(id, mensagem) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+  const conv = await getConversationById(id);
+  if (!conv) throw new Error(`Conversa ${id} não encontrada`);
 
-    // Lock na linha para evitar race condition
-    const { rows } = await client.query(
-      `SELECT * FROM atendimentos WHERE id = $1 FOR UPDATE`,
-      [id]
-    );
-    if (!rows[0]) throw new Error(`Conversa ${id} não encontrada`);
-    const conv = rows[0];
+  const historico = Array.isArray(conv.historico) ? conv.historico : [];
+  const hora = mensagem.hora || horaBrasilia();
 
-    const historico = Array.isArray(conv.historico) ? conv.historico : [];
-    const hora = mensagem.hora || horaBrasilia();
+  const novaMensagem = {
+    de: mensagem.de,
+    texto: mensagem.texto,
+    hora,
+    atendente: mensagem.atendente || '',
+    ...(mensagem.arquivo ? { arquivo: mensagem.arquivo } : {}),
+  };
 
-    const novaMensagem = {
-      de:        mensagem.de,
-      texto:     mensagem.texto,
-      hora,
-      atendente: mensagem.atendente || '',
-      ...(mensagem.arquivo ? { arquivo: mensagem.arquivo } : {}),
-    };
+  historico.push(novaMensagem);
 
-    historico.push(novaMensagem);
+  const novoStatus = (conv.status === 'aguardando' || conv.status === '')
+    ? 'em_atendimento'
+    : conv.status;
 
-    const novoStatus = (conv.status === 'aguardando' || conv.status === '')
-      ? 'em_atendimento'
-      : conv.status;
+  const { error } = await supabase
+    .from('atendimentos')
+    .update({
+      historico,
+      status: novoStatus,
+      atualizado_em: isoAgora(),
+    })
+    .eq('id', id);
 
-    await client.query(
-      `UPDATE atendimentos
-       SET historico = $1, status = $2, atualizado_em = now()
-       WHERE id = $3`,
-      [JSON.stringify(historico), novoStatus, id]
-    );
+  if (error) throw error;
 
-    // Grava na tabela historico (espelho para Sheets/Glide)
-    if (mensagem.de === 'humano' || mensagem.de === 'atendente') {
-      await client.query(
-        `INSERT INTO historico
-           (id_atendimento, telefone, data_hora, atendente, mensagem_cliente, resposta_atendente)
-         VALUES ($1, $2, now(), $3, '', $4)`,
-        [id, conv.telefone, mensagem.atendente || conv.atendente || '', mensagem.texto]
-      );
-    } else if (mensagem.de === 'cliente') {
-      await client.query(
-        `INSERT INTO historico
-           (id_atendimento, telefone, data_hora, atendente, mensagem_cliente, resposta_atendente)
-         VALUES ($1, $2, now(), '', $3, '')`,
-        [id, conv.telefone, mensagem.texto]
-      );
-    }
+  await supabase.from('historico').insert({
+    id_atendimento: id,
+    telefone: conv.telefone,
+    data_hora: isoAgora(),
+    atendente: mensagem.atendente || conv.atendente || '',
+    mensagem_cliente: mensagem.de === 'cliente' ? mensagem.texto : '',
+    resposta_atendente: mensagem.de === 'humano' ? mensagem.texto : '',
+  });
 
-    await client.query('COMMIT');
-    return { ...conv, historico, status: novoStatus };
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
-  }
+  return { ...conv, historico, status: novoStatus };
 }
 
 async function setAtendente(id, atendente) {
-  await pool.query(
-    `UPDATE atendimentos SET atendente = $1, atualizado_em = now() WHERE id = $2`,
-    [atendente, id]
-  );
+  const { error } = await supabase
+    .from('atendimentos')
+    .update({ atendente, atualizado_em: isoAgora() })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 async function setStatus(id, status) {
-  await pool.query(
-    `UPDATE atendimentos SET status = $1, atualizado_em = now() WHERE id = $2`,
-    [status, id]
-  );
+  const { error } = await supabase
+    .from('atendimentos')
+    .update({ status, atualizado_em: isoAgora() })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // ─── ATENDENTES (LOGIN) ──────────────────────────────────────────────────────
 
 async function getAtendentes() {
-  const { rows } = await pool.query(
-    `SELECT id, nome, email, cor FROM atendentes ORDER BY nome`
-  );
-  return rows;
+  const { data, error } = await supabase
+    .from('atendentes')
+    .select('id, nome, email, cor')
+    .order('nome');
+  if (error) throw error;
+  return data || [];
 }
 
 async function getAtendenteByEmail(email) {
-  const { rows } = await pool.query(
-    `SELECT * FROM atendentes WHERE email = $1 LIMIT 1`,
-    [email]
-  );
-  return rows[0] || null;
+  const { data, error } = await supabase
+    .from('atendentes')
+    .select('*')
+    .eq('email', email)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
 }
 
 async function getAtendenteByNome(nome) {
-  const { rows } = await pool.query(
-    `SELECT * FROM atendentes WHERE nome = $1 LIMIT 1`,
-    [nome]
-  );
-  return rows[0] || null;
+  const { data, error } = await supabase
+    .from('atendentes')
+    .select('*')
+    .eq('nome', nome)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
 }
 
 module.exports = {
-  // contatos
   getContatoByPhone,
   createContato,
   updateContato,
   getAllContatos,
-  // atendimentos
   getAllAtendimentos,
   getPendingConversations,
   getConversationByPhone,
@@ -300,7 +279,6 @@ module.exports = {
   appendMessage,
   setAtendente,
   setStatus,
-  // atendentes
   getAtendentes,
   getAtendenteByEmail,
   getAtendenteByNome,
