@@ -52,9 +52,9 @@ body::before{content:'';position:fixed;inset:0;background:
 
 /* ── SIDEBAR ── */
 #sidebar{width:290px;min-width:290px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;position:relative;z-index:1}
-#sidebar-header{padding:16px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+#sidebar-header{padding:20px 16px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:12px;flex-shrink:0}
 .brand{display:flex;align-items:center;gap:10px}
-.brand-logo img{height:28px;object-fit:contain}
+.brand-logo img{object-fit:contain}
 .brand-sub{font-size:10px;color:var(--text3);margin-top:2px;letter-spacing:.04em;text-transform:uppercase}
 #atendente-bar{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:12px;flex-shrink:0;background:rgba(124,58,237,.04)}
 #atendente-badge{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;box-shadow:0 0 6px var(--green)}
@@ -233,7 +233,7 @@ body::before{content:'';position:fixed;inset:0;background:
 <div id="sidebar">
   <div id="sidebar-header">
     <div class="brand">
-      <div class="brand-logo"><img src="/Logo_Flux_2_Up_semfundo.png" alt="Flux2Up" style="height:36px"></div>
+      <div class="brand-logo"><img src="/Logo_Flux_2_Up_semfundo.png" alt="Flux2Up" style="height:64px;filter:drop-shadow(0 0 18px rgba(124,58,237,.55))"></div>
     </div>
     <button id="refresh-btn" onclick="loadConversations()">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
