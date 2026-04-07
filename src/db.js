@@ -32,12 +32,37 @@ async function getContatoByPhone(telefone) {
 
 async function createContato({ telefone, nome, empresa }) {
   const tel = String(telefone).replace(/\D/g, '');
+  const nomeReal = (nome && nome !== 'Cliente WhatsApp' && nome !== 'Cliente') ? nome : null;
+
+  // Busca contato existente
+  const { data: existing } = await supabase
+    .from('contatos')
+    .select('*')
+    .eq('telefone', tel)
+    .single();
+
+  if (existing) {
+    // Atualiza nome só se vier um nome real e o atual for genérico
+    const nomeAtualGenerico = existing.nome === 'Cliente WhatsApp' || existing.nome === 'Cliente';
+    if (nomeReal && nomeAtualGenerico) {
+      await supabase
+        .from('contatos')
+        .update({ nome: nomeReal, atualizado_em: isoAgora() })
+        .eq('telefone', tel);
+      return { ...existing, nome: nomeReal };
+    }
+    return existing;
+  }
+
+  // Cria novo contato
   const { data, error } = await supabase
     .from('contatos')
-    .upsert(
-      { telefone: tel, nome: nome || 'Cliente', empresa: empresa || '', atualizado_em: isoAgora() },
-      { onConflict: 'telefone' }
-    )
+    .insert({
+      telefone: tel,
+      nome: nomeReal || 'Cliente WhatsApp',
+      empresa: empresa || '',
+      atualizado_em: isoAgora(),
+    })
     .select()
     .single();
   if (error) throw error;
@@ -155,7 +180,7 @@ async function getHistoricoCompleto(telefone) {
 async function createConversation({ id, telefone, nome, resumo_ia, historico }) {
   const tel = String(telefone).replace(/\D/g, '');
 
-  const contato = await createContato({ telefone: tel, nome: nome || 'Cliente' });
+  const contato = await createContato({ telefone: tel, nome: nome || 'Cliente WhatsApp' });
 
   const { count } = await supabase
     .from('atendimentos')
