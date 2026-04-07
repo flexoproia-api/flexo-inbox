@@ -34,7 +34,10 @@ async function createContato({ telefone, nome, empresa }) {
   const tel = String(telefone).replace(/\D/g, '');
   const { data, error } = await supabase
     .from('contatos')
-    .upsert({ telefone: tel, nome: nome || 'Cliente', empresa: empresa || '', atualizado_em: isoAgora() }, { onConflict: 'telefone' })
+    .upsert(
+      { telefone: tel, nome: nome || 'Cliente', empresa: empresa || '', atualizado_em: isoAgora() },
+      { onConflict: 'telefone' }
+    )
     .select()
     .single();
   if (error) throw error;
@@ -43,14 +46,18 @@ async function createContato({ telefone, nome, empresa }) {
 
 async function updateContato({ telefone, nome, empresa }) {
   const tel = String(telefone).replace(/\D/g, '');
+  console.log('[updateContato] telefone:', tel, 'nome:', nome, 'empresa:', empresa);
   const { data, error } = await supabase
     .from('contatos')
-    .update({ nome, empresa, atualizado_em: isoAgora() })
+    .update({ nome, empresa: empresa || '', atualizado_em: isoAgora() })
     .eq('telefone', tel)
-    .select()
-    .single();
-  if (error) throw error;
-  return data || null;
+    .select();
+  if (error) {
+    console.error('[updateContato] erro:', error);
+    throw error;
+  }
+  console.log('[updateContato] resultado:', data);
+  return data?.[0] || null;
 }
 
 async function getAllContatos() {
