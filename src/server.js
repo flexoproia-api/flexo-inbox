@@ -182,13 +182,13 @@ app.get('/api/historico-ia/:telefone', async (req, res) => {
   const tel = String(req.params.telefone).replace(/\D/g, '');
   const sheetId = process.env.SHEETS_ID_CRM || process.env.SHEETS_ID;
   try {
-    const [conversas, propostas] = await Promise.all([
-      getSheetRows(sheetId, 'conversas'),
-      getSheetRows(sheetId, 'Propostas'),
+    const [atendimentos, propostas] = await Promise.all([
+      getSheetRows(sheetId, 'atendimentos'),
+      getSheetRows(sheetId, 'propostas'),
     ]);
-    const minhasConversas = conversas.filter(r => String(r.telefone||'').replace(/\D/g,'') === tel);
+    const meusAtendimentos = atendimentos.filter(r => String(r.telefone||'').replace(/\D/g,'') === tel);
     const minhasPropostas = propostas.filter(r => String(r.telefone||'').replace(/\D/g,'') === tel);
-    res.json({ ok: true, data: { conversas: minhasConversas, propostas: minhasPropostas } });
+    res.json({ ok: true, data: { atendimentos: meusAtendimentos, propostas: minhasPropostas } });
   } catch (e) {
     console.error('[GET /api/historico-ia]', e.message);
     res.status(500).json({ ok: false, error: e.message });
