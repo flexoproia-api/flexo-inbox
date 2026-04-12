@@ -240,17 +240,32 @@ app.post('/api/send-file', upload.single('file'), async (req, res) => {
 });
 
 // ─── FINALIZAR ───────────────────────────────────────────────────────────────
-app.post('/api/finish', async (req, res) => {
+app.post("/api/finish", async (req, res) => {
   const { id, tag } = req.body;
-  if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+  if (!id) return res.status(400).json({ ok: false, error: "id obrigatório" });
   try {
     const conv = await db.getConversationById(id);
-    if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada' });
-    await db.setStatus(id, 'finalizado');
+    if (!conv) return res.status(404).json({ ok: false, error: "Conversa não encontrada" });
+    await db.setStatus(id, "finalizado");
     if (tag) await db.setTag(id, tag);
-    wsManager.notifyConversation(id, { action: 'finished' });
-    wsManager.broadcast({ type: 'conv_finished', convId: id });
-    res.json({ ok: true, message: 'Atendimento finalizado. IA liberada.' });
+    wsManager.notifyConversation(id, { action: "finished" });
+    wsManager.broadcast({ type: "conv_finished", convId: id });
+    res.json({ ok: true, message: "Atendimento finalizado. IA liberada." });
+    // Notifica N8N para gravar no Sheets (não bloqueia a resposta)
+    if (process.env.N8N_FINALIZAR_WEBHOOK) {
+      const payload = {
+        id,
+        telefone: conv.telefone,
+        nome: conv.nome || "Cliente",
+        empresa: conv.empresa || "",
+        atendente: conv.atendente || "",
+        tag: tag || "SEM_TAG",
+        data_finalizacao: new Date().toISOString(),
+      };
+      const axios = require("axios");
+      axios.post(process.env.N8N_FINALIZAR_WEBHOOK, payload, { timeout: 8000 })
+        .catch(e => console.error("[finish webhook]", e.message));
+    }
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
