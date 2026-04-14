@@ -84,6 +84,14 @@ function checkSecret(req, res, next) {
   next();
 }
 
+// ─── UTILITÁRIO: normaliza nome do agente IA no resumo ───────────────────────
+function normalizarResumo(texto) {
+  if (!texto) return texto;
+  return texto
+    .replace(/\bAgente Lucas\b/gi, 'Flexo Pro IA')
+    .replace(/\bLucas\b/g, 'Flexo Pro IA');
+}
+
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   const { email, senha } = req.body;
@@ -158,43 +166,29 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
-// ─── GET CONVERSA POR ID — retorna também contexto da IA ─────────────────────
+// ─── GET CONVERSA POR ID — retorna resumo_ia do último atendimento anterior ──
 app.get('/api/conversations/:id', async (req, res) => {
   try {
     const conv = await db.getConversationById(req.params.id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Não encontrado' });
 
-    // Busca todo o histórico do contato para montar contexto da IA
+    // Busca todo o histórico do contato
     const todoHistorico = await db.getHistoricoCompleto(conv.telefone);
 
-    // Atendimentos anteriores finalizados com resumo_ia ou mensagens humanas
-    const anteriores = todoHistorico
-      .filter(a => a.id !== conv.id && a.status === 'finalizado')
-      .filter(a => (a.resumo_ia && a.resumo_ia.trim()) || a.historico?.length > 0)
-      .sort((a, b) => a.numero_atendimento - b.numero_atendimento)
-      .map(a => ({
-        numero: a.numero_atendimento,
-        data: a.atualizado_em,
-        tag: a.tag_gerada || 'SEM_TAG',
-        atendente: a.atendente || '',
-        resumo_ia: a.resumo_ia || '',
-        mensagens: a.historico || [],
-      }));
+    // Pega o resumo_ia do atendimento anterior mais recente com conteúdo
+    const ultimoComResumo = [...todoHistorico]
+      .filter(a => a.id !== conv.id && a.resumo_ia && a.resumo_ia.trim())
+      .sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em))[0];
 
-    // Resumo_ia do atendimento atual (caso tenha vindo do N8N)
-    // + fallback: pega o resumo do último atendimento anterior com conteúdo
-    const resumo_ia_atual = conv.resumo_ia && conv.resumo_ia.trim()
+    // Prioriza resumo do atendimento atual; fallback para o último anterior
+    const resumo_ia_bruto = conv.resumo_ia && conv.resumo_ia.trim()
       ? conv.resumo_ia
-      : (anteriores.filter(a => a.resumo_ia).pop()?.resumo_ia || '');
+      : (ultimoComResumo?.resumo_ia || '');
 
-    res.json({
-      ok: true,
-      data: {
-        ...conv,
-        resumo_ia: resumo_ia_atual,
-        atendimentos_anteriores: anteriores,
-      },
-    });
+    // Normaliza: substitui "Lucas" por "Flexo Pro IA"
+    const resumo_ia = normalizarResumo(resumo_ia_bruto);
+
+    res.json({ ok: true, data: { ...conv, resumo_ia } });
   } catch (e) {
     console.error('[GET /api/conversations/:id]', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -284,15 +278,14 @@ app.post('/api/finish', async (req, res) => {
     wsManager.notifyConversation(id, { action: 'finished' });
     wsManager.broadcast({ type: 'conv_finished', convId: id });
     res.json({ ok: true, message: 'Atendimento finalizado. IA liberada.' });
-    // Notifica N8N para gravar no Sheets (não bloqueia a resposta)
     if (process.env.N8N_FINALIZAR_WEBHOOK) {
       const payload = {
         id,
-        telefone:        conv.telefone,
-        nome:            conv.nome     || 'Cliente',
-        empresa:         conv.empresa  || '',
-        atendente:       conv.atendente || '',
-        tag:             tag           || 'SEM_TAG',
+        telefone:         conv.telefone,
+        nome:             conv.nome      || 'Cliente',
+        empresa:          conv.empresa   || '',
+        atendente:        conv.atendente || '',
+        tag:              tag            || 'SEM_TAG',
         data_finalizacao: new Date().toISOString(),
       };
       const axios = require('axios');
