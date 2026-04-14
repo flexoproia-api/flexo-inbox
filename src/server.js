@@ -172,20 +172,16 @@ app.get('/api/conversations/:id', async (req, res) => {
     const conv = await db.getConversationById(req.params.id);
     if (!conv) return res.status(404).json({ ok: false, error: 'Não encontrado' });
 
-    // Busca todo o histórico do contato
     const todoHistorico = await db.getHistoricoCompleto(conv.telefone);
 
-    // Pega o resumo_ia do atendimento anterior mais recente com conteúdo
     const ultimoComResumo = [...todoHistorico]
       .filter(a => a.id !== conv.id && a.resumo_ia && a.resumo_ia.trim())
       .sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em))[0];
 
-    // Prioriza resumo do atendimento atual; fallback para o último anterior
     const resumo_ia_bruto = conv.resumo_ia && conv.resumo_ia.trim()
       ? conv.resumo_ia
       : (ultimoComResumo?.resumo_ia || '');
 
-    // Normaliza: substitui "Lucas" por "Flexo Pro IA"
     const resumo_ia = normalizarResumo(resumo_ia_bruto);
 
     res.json({ ok: true, data: { ...conv, resumo_ia } });
@@ -204,18 +200,53 @@ app.get('/api/historico/:telefone', async (req, res) => {
   }
 });
 
-// ─── HISTÓRICO IA (via Google Sheets — mantido como fallback) ─────────────────
+// ─── HISTÓRICO IA (via Supabase — atendimentos_ia) ───────────────────────────
 app.get('/api/historico-ia/:telefone', async (req, res) => {
   const tel = String(req.params.telefone).replace(/\D/g, '');
-  const sheetId = process.env.SHEETS_ID_CRM || process.env.SHEETS_ID;
   try {
-    const [atendimentos, propostas] = await Promise.all([
-      getSheetRows(sheetId, 'atendimentos'),
-      getSheetRows(sheetId, 'propostas'),
-    ]);
-    const meusAtendimentos = atendimentos.filter(r => String(r.telefone||'').replace(/\D/g,'') === tel);
-    const minhasPropostas  = propostas.filter(r => String(r.telefone||'').replace(/\D/g,'') === tel);
-    res.json({ ok: true, data: { atendimentos: meusAtendimentos, propostas: minhasPropostas } });
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+    const { data: atendimentos, error } = await supabase
+      .from('atendimentos_ia')
+      .select('*')
+      .eq('telefone', tel)
+      .order('data_inicio', { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    // Parseia historico_json (texto corrido) em array de mensagens
+    const conversas = [];
+    (atendimentos || []).forEach(at => {
+      const texto = at.historico_json || '';
+      const linhas = texto.split('\n').filter(l => l.trim());
+      linhas.forEach(linha => {
+        if (linha.startsWith('Cliente:')) {
+          conversas.push({
+            id_conversa: at.id,
+            data_hora: at.data_inicio,
+            mensagem_cliente: linha.replace('Cliente:', '').trim(),
+            resposta_lucas: '',
+            tag_gerada: at.tag_final || ''
+          });
+        } else if (linha.startsWith('Lucas:')) {
+          const ultima = conversas[conversas.length - 1];
+          if (ultima && ultima.id_conversa === at.id && !ultima.resposta_lucas) {
+            ultima.resposta_lucas = linha.replace('Lucas:', '').trim();
+          } else {
+            conversas.push({
+              id_conversa: at.id,
+              data_hora: at.data_inicio,
+              mensagem_cliente: '',
+              resposta_lucas: linha.replace('Lucas:', '').trim(),
+              tag_gerada: at.tag_final || ''
+            });
+          }
+        }
+      });
+    });
+
+    res.json({ ok: true, data: { conversas, propostas: [] } });
   } catch (e) {
     console.error('[GET /api/historico-ia]', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -334,7 +365,6 @@ app.post('/webhook/new-conversation', checkSecret, async (req, res) => {
   try {
     const existing = await db.getConversationByPhone(telefone);
     if (existing) {
-      // Atualiza resumo_ia se veio preenchido e o existente está vazio
       if (resumo_ia && resumo_ia.trim() && !existing.resumo_ia) {
         const { createClient } = require('@supabase/supabase-js');
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
