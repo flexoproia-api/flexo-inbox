@@ -168,10 +168,10 @@ function esc(s){
 }
 
 function tagInfo(tag) {
-  if (!tag||tag==='SEM_TAG'||tag==='[SEM_TAG]') return {cls:'tag-sem',label:'Sem tag'};
-  if (tag.includes('CONFIRMADO')||tag.includes('QUALIFICADO')) return {cls:'tag-ok',label:tag.replace(/[\[\]]/g,'')};
+  if (!tag || tag === 'SEM_TAG' || tag === '[SEM_TAG]') return {cls:'tag-sem',label:'Sem tag'};
+  if (tag.includes('CONFIRMADO') || tag.includes('QUALIFICADO')) return {cls:'tag-ok',label:tag.replace(/[\[\]]/g,'')};
   if (tag.includes('PERDIDO')) return {cls:'tag-perdido',label:tag.replace(/[\[\]]/g,'')};
-  if (tag.includes('HUMANO')||tag.includes('TRANSFERIR')) return {cls:'tag-humano',label:tag.replace(/[\[\]]/g,'')};
+  if (tag.includes('HUMANO') || tag.includes('TRANSFERIR')) return {cls:'tag-humano',label:tag.replace(/[\[\]]/g,'')};
   return {cls:'tag-sem',label:tag.replace(/[\[\]]/g,'')};
 }
 
@@ -185,20 +185,24 @@ function normalizeHistorico(historico) {
   return [];
 }
 
-function renderHistoricoLines(lines, hora) {
-  let html = '';
+function parseHistorico(historico, hora) {
+  const htmlParts = [];
+  const linhas = normalizeHistorico(historico);
 
-  lines.forEach(linha => {
+  linhas.forEach(linha => {
     if (linha.startsWith('Cliente:')) {
       const txt = linha.replace(/^Cliente:\s*/, '').trim();
       if (txt) {
-        html += `<div class="msg cliente">
+        htmlParts.push(`<div class="msg cliente">
           <div class="msg-who">Cliente</div>
           <div class="bubble">${esc(txt)}</div>
           ${hora ? `<div class="msg-time">${hora}</div>` : ''}
-        </div>`;
+        </div>`);
       }
-    } else if (
+      return;
+    }
+
+    if (
       linha.startsWith('IA:') ||
       linha.startsWith('Flexo PRO IA:') ||
       linha.startsWith('Lucas:')
@@ -211,16 +215,16 @@ function renderHistoricoLines(lines, hora) {
         .trim();
 
       if (txt) {
-        html += `<div class="msg ia">
+        htmlParts.push(`<div class="msg ia">
           <div class="msg-who">IA 🤖</div>
           <div class="bubble">${esc(txt)}</div>
           ${hora ? `<div class="msg-time">${hora}</div>` : ''}
-        </div>`;
+        </div>`);
       }
     }
   });
 
-  return html;
+  return htmlParts.join('');
 }
 
 async function init() {
@@ -233,7 +237,7 @@ async function init() {
   document.getElementById('header-phone').textContent = fmtTel(tel);
 
   try {
-    const res  = await fetch(`/api/historico-ia/${tel}`);
+    const res = await fetch(`/api/historico-ia/${tel}`);
     const body = await res.json();
     if (!body.ok) throw new Error(body.error);
 
@@ -245,7 +249,7 @@ async function init() {
     }
 
     const propMap = {};
-    propostas.forEach(p => { if (p.id_proposta) propMap[p.id_proposta] = p; });
+    (propostas || []).forEach(p => { if (p.id_proposta) propMap[p.id_proposta] = p; });
 
     const sessoes = {};
     conversas.forEach(r => {
@@ -253,6 +257,7 @@ async function init() {
       if (!sessoes[key]) sessoes[key] = { rows: [], tag: '', id_proposta: '' };
       sessoes[key].rows.push(r);
       if (r.tag_gerada && r.tag_gerada !== 'SEM_TAG') sessoes[key].tag = r.tag_gerada;
+      if (r.tag_final && !sessoes[key].tag) sessoes[key].tag = r.tag_final;
       if (r.id_proposta) sessoes[key].id_proposta = r.id_proposta;
     });
 
@@ -264,7 +269,7 @@ async function init() {
     document.getElementById('stats').style.display='grid';
     document.getElementById('s-sessoes').textContent = keys.length;
     document.getElementById('s-msgs').textContent = conversas.length;
-    document.getElementById('s-props').textContent = propostas.length;
+    document.getElementById('s-props').textContent = (propostas || []).length;
     document.getElementById('s-data').textContent = fmtData(conversas[0]?.data_hora || '');
 
     let html = '';
@@ -284,11 +289,15 @@ async function init() {
       }
 
       let mensagensHtml = '';
-      const historicoCompleto = rows[rows.length - 1]?.historico_json;
-      const linhasHistorico = normalizeHistorico(historicoCompleto);
 
-      if (linhasHistorico.length > 0) {
-        mensagensHtml = renderHistoricoLines(linhasHistorico, horaSessao);
+      // prioriza o último historico_json da sessão
+      const ultimoComHistorico = [...rows].reverse().find(r => {
+        const linhas = normalizeHistorico(r.historico_json);
+        return linhas.length > 0;
+      });
+
+      if (ultimoComHistorico) {
+        mensagensHtml = parseHistorico(ultimoComHistorico.historico_json, horaSessao);
       } else {
         rows.forEach(r => {
           const h = fmtHora(r.data_hora);
@@ -314,9 +323,13 @@ async function init() {
         });
       }
 
+      const totalMsgs = ultimoComHistorico
+        ? normalizeHistorico(ultimoComHistorico.historico_json).length
+        : rows.length;
+
       html += `<div class="session">
         <div class="session-header">
-          <div class="session-info">🕐 ${horaSessao} · ${linhasHistorico.length || rows.length} mensagem(ns)</div>
+          <div class="session-info">🕐 ${horaSessao} · ${totalMsgs} mensagem(ns)</div>
           <span class="session-tag ${ti.cls}">${ti.label}</span>
         </div>`;
 
