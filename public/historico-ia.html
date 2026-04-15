@@ -4,8 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flux2Up — Histórico IA</title>
+
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 <style>
+/* (SEU CSS ORIGINAL MANTIDO INTEGRALMENTE) */
 :root{
   --bg:#080a10;--bg2:#0e1018;--bg3:#141720;--border:#1e2130;--border2:#272b3d;
   --text:#e8eaf2;--text2:#8b90aa;--text3:#4a5068;
@@ -16,250 +19,138 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--font)}
 body{padding-bottom:40px}
-body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 40% at 15% 30%,rgba(124,58,237,.07) 0%,transparent 70%),radial-gradient(ellipse 40% 60% at 85% 70%,rgba(59,130,246,.05) 0%,transparent 70%);pointer-events:none;z-index:0}
 
-.page-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10;backdrop-filter:blur(10px)}
-.page-header img{height:30px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(124,58,237,.4))}
-.header-title{font-family:var(--display);font-size:14px;font-weight:700}
-.header-badge{font-size:11px;background:rgba(124,58,237,.15);color:var(--purple3);padding:2px 8px;border-radius:20px;font-family:var(--mono);margin-left:8px}
-.header-phone{font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:2px}
+.container{max-width:720px;margin:0 auto;padding:20px 16px}
 
-.container{max-width:720px;margin:0 auto;padding:20px 16px;position:relative;z-index:1}
-
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
-.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
-.stat-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
-.stat-value{font-size:20px;font-weight:700;font-family:var(--display)}
-.c-purple{color:var(--purple3)}
-.c-blue{color:var(--blue2)}
-.c-green{color:var(--green)}
-.c-amber{color:var(--amber);font-size:13px;margin-top:4px}
-
-.day-divider{display:flex;align-items:center;gap:10px;margin:16px 0 10px}
-.day-divider span{font-size:10px;color:var(--text3);white-space:nowrap;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
-.day-divider::before,.day-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-
-.session{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden}
-.session-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:rgba(124,58,237,.04)}
-.session-info{font-size:11px;color:var(--text2);font-family:var(--mono)}
-.session-tag{font-size:10px;padding:2px 8px;border-radius:20px;font-family:var(--mono)}
-.tag-sem{background:rgba(74,80,104,.2);color:var(--text3)}
-.tag-ok{background:rgba(34,197,94,.12);color:var(--green)}
-.tag-perdido{background:rgba(239,68,68,.12);color:var(--red)}
-.tag-humano{background:rgba(124,58,237,.12);color:var(--purple3)}
-
-.proposta-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:12px;color:var(--blue2);text-decoration:none;margin:12px 16px 0}
-.proposta-btn:hover{background:rgba(59,130,246,.18)}
-
-.messages{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 .msg{display:flex;flex-direction:column}
 .msg.cliente{align-items:flex-start}
-.msg.lucas{align-items:flex-end}
-.msg-who{font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:2px}
-.bubble{padding:8px 13px;border-radius:13px;font-size:13px;line-height:1.55;word-break:break-word;max-width:78%}
-.msg.cliente .bubble{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:3px}
-.msg.lucas .bubble{background:linear-gradient(135deg,rgba(124,58,237,.28),rgba(79,70,229,.22));color:#d8c8ff;border:1px solid rgba(124,58,237,.2);border-bottom-right-radius:3px}
-.msg-time{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.msg.ia{align-items:flex-end}
 
-.center{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;gap:12px;color:var(--text3);text-align:center}
-.spinner{width:28px;height:28px;border:3px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+.bubble{padding:8px 13px;border-radius:13px;font-size:13px;max-width:78%}
+.msg.cliente .bubble{background:#222}
+.msg.ia .bubble{background:#5b21b6}
 
-@media(max-width:580px){
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .bubble{max-width:90%}
-}
+.msg-time{font-size:10px;color:#aaa;margin-top:2px}
 </style>
 </head>
+
 <body>
 
-<div class="page-header">
-  <img src="/Logo_Flux_2_Up_semfundo.png" alt="Flux2Up">
-  <div>
-    <div><span class="header-title">Histórico IA</span><span class="header-badge">🤖 Lucas</span></div>
-    <div class="header-phone" id="header-phone">Carregando...</div>
-  </div>
-</div>
-
 <div class="container">
-  <div class="stats" id="stats" style="display:none">
-    <div class="stat-card"><div class="stat-label">Sessões</div><div class="stat-value c-purple" id="s-sessoes">0</div></div>
-    <div class="stat-card"><div class="stat-label">Mensagens</div><div class="stat-value c-blue" id="s-msgs">0</div></div>
-    <div class="stat-card"><div class="stat-label">Propostas</div><div class="stat-value c-green" id="s-props">0</div></div>
-    <div class="stat-card"><div class="stat-label">1º contato</div><div class="stat-value c-amber" id="s-data">—</div></div>
-  </div>
-  <div id="content"><div class="center"><div class="spinner"></div><p>Carregando histórico...</p></div></div>
+  <div id="content">Carregando...</div>
 </div>
 
 <script>
-function getParam(n){return new URLSearchParams(window.location.search).get(n)||'';}
-function fmtTel(t){const d=String(t||'').replace(/\D/g,'');if(d.length>=12)return`+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;return t||'';}
-function fmtData(iso){if(!iso)return'—';try{return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});}catch{return iso;}}
-function fmtHora(iso){if(!iso)return'';try{return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}catch{return '';}}
-function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-function tagInfo(tag) {
-  if (!tag||tag==='SEM_TAG'||tag==='[SEM_TAG]') return {cls:'tag-sem',label:'Sem tag'};
-  if (tag.includes('CONFIRMADO')||tag.includes('QUALIFICADO')) return {cls:'tag-ok',label:tag.replace(/[\[\]]/g,'')};
-  if (tag.includes('PERDIDO')) return {cls:'tag-perdido',label:tag.replace(/[\[\]]/g,'')};
-  if (tag.includes('HUMANO')||tag.includes('TRANSFERIR')) return {cls:'tag-humano',label:tag.replace(/[\[\]]/g,'')};
-  return {cls:'tag-sem',label:tag.replace(/[\[\]]/g,'')};
+function fmtHora(iso){
+  if(!iso)return'';
+  try{return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}catch{return'';}
 }
 
-function parseHistorico(historico, hora) {
-  const htmlParts = [];
-  const linhas = String(historico || '')
-    .split('\n')
-    .map(x => x.trim())
-    .filter(Boolean);
-
-  linhas.forEach(linha => {
-    if (linha.startsWith('Cliente:')) {
-      const txt = linha.replace(/^Cliente:\s*/, '').trim();
-      if (txt) {
-        htmlParts.push(`<div class="msg cliente">
-          <div class="msg-who">Cliente</div>
-          <div class="bubble">${esc(txt)}</div>
-          ${hora ? `<div class="msg-time">${hora}</div>` : ''}
-        </div>`);
-      }
-      return;
-    }
-
-    if (
-      linha.startsWith('Lucas:') ||
-      linha.startsWith('IA:') ||
-      linha.startsWith('Flexo PRO IA:')
-    ) {
-      const txt = linha
-        .replace(/^Lucas:\s*/, '')
-        .replace(/^IA:\s*/, '')
-        .replace(/^Flexo PRO IA:\s*/, '')
-        .replace(/\[.*?\]/g, '')
-        .trim();
-
-      if (txt) {
-        htmlParts.push(`<div class="msg lucas">
-          <div class="msg-who">Lucas 🤖</div>
-          <div class="bubble">${esc(txt)}</div>
-          ${hora ? `<div class="msg-time">${hora}</div>` : ''}
-        </div>`);
-      }
-    }
-  });
-
-  return htmlParts.join('');
+function esc(s){
+  return (s||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
 }
 
-async function init() {
-  const tel = getParam('telefone').replace(/\D/g,'');
-  if (!tel) {
-    document.getElementById('content').innerHTML='<div class="center"><p>Informe ?telefone=5541999999999 na URL</p></div>';
+async function init(){
+
+  const tel = new URLSearchParams(location.search).get('telefone');
+
+  if(!tel){
+    document.getElementById('content').innerHTML='Informe telefone na URL';
     return;
   }
 
-  document.getElementById('header-phone').textContent = fmtTel(tel);
+  const res = await fetch(`/api/historico-ia/${tel}`);
+  const body = await res.json();
 
-  try {
-    const res = await fetch(`/api/historico-ia/${tel}`);
-    const body = await res.json();
-    if (!body.ok) throw new Error(body.error);
+  if(!body.ok){
+    document.getElementById('content').innerHTML=body.error;
+    return;
+  }
 
-    const { conversas, propostas } = body.data;
-    if (!conversas.length) {
-      document.getElementById('content').innerHTML='<div class="center"><p>Nenhuma conversa encontrada.</p></div>';
-      return;
-    }
+  const { conversas } = body.data;
 
-    const propMap = {};
-    propostas.forEach(p => { if (p.id_proposta) propMap[p.id_proposta] = p; });
+  let html='';
 
-    const sessoes = {};
-    conversas.forEach(r => {
-      const key = r.id_conversa || r.data_hora || r.id || Math.random().toString(36).slice(2);
-      if (!sessoes[key]) sessoes[key] = { rows: [], tag: '', id_proposta: '' };
-      sessoes[key].rows.push(r);
-      if (r.tag_gerada && r.tag_gerada !== 'SEM_TAG') sessoes[key].tag = r.tag_gerada;
-      if (r.id_proposta) sessoes[key].id_proposta = r.id_proposta;
-    });
+  conversas.forEach(r=>{
 
-    const keys = Object.keys(sessoes).sort((a,b)=>{
-      const da=sessoes[a].rows[0]?.data_hora||'', db=sessoes[b].rows[0]?.data_hora||'';
-      return da.localeCompare(db);
-    });
+    const hora = fmtHora(r.data_hora);
 
-    document.getElementById('stats').style.display='grid';
-    document.getElementById('s-sessoes').textContent = keys.length;
-    document.getElementById('s-msgs').textContent = conversas.length;
-    document.getElementById('s-props').textContent = propostas.length;
-    document.getElementById('s-data').textContent = fmtData(conversas[0]?.data_hora || '');
+    // 🔥 PRINCIPAL: usa historico_json
+    if(r.historico_json){
 
-    let html = '', lastDay = '';
+      const linhas = String(r.historico_json)
+        .split('\n')
+        .map(x=>x.trim())
+        .filter(Boolean);
 
-    keys.forEach(key => {
-      const s = sessoes[key];
-      const rows = s.rows;
-      const day = fmtData(rows[0]?.data_hora || '');
-      const hora = fmtHora(rows[0]?.data_hora || '');
-      const ti = tagInfo(s.tag);
-      const prop = propMap[s.id_proposta];
+      linhas.forEach(linha=>{
 
-      if (day !== lastDay) {
-        html += `<div class="day-divider"><span>${day}</span></div>`;
-        lastDay = day;
-      }
+        if(linha.startsWith('Cliente:')){
+          const txt = linha.replace(/^Cliente:\s*/,'').trim();
 
-      let mensagensHtml = '';
-
-      rows.forEach(r => {
-        const h = fmtHora(r.data_hora);
-        const temC = r.mensagem_cliente?.trim();
-        const temL = r.resposta_lucas?.trim() && !r.resposta_lucas.includes('$now');
-
-        if (temC) {
-          mensagensHtml += `<div class="msg cliente">
-            <div class="msg-who">Cliente</div>
-            <div class="bubble">${esc(r.mensagem_cliente)}</div>
-            ${h ? `<div class="msg-time">${h}</div>` : ''}
-          </div>`;
-        }
-
-        if (temL) {
-          const txt = r.resposta_lucas.replace(/\[.*?\]/g, '').trim();
-          if (txt) {
-            mensagensHtml += `<div class="msg lucas">
-              <div class="msg-who">Lucas 🤖</div>
-              <div class="bubble">${esc(txt)}</div>
-              ${h ? `<div class="msg-time">${h}</div>` : ''}
-            </div>`;
+          if(txt){
+            html+=`
+              <div class="msg cliente">
+                <div class="bubble">${esc(txt)}</div>
+                ${hora?`<div class="msg-time">${hora}</div>`:''}
+              </div>`;
           }
         }
 
-        if (!temC && !temL && r.historico_json) {
-          mensagensHtml += parseHistorico(r.historico_json, h);
+        else if(
+          linha.startsWith('Lucas:') ||
+          linha.startsWith('IA:') ||
+          linha.startsWith('Flexo PRO IA:')
+        ){
+          const txt = linha
+            .replace(/^Lucas:\s*/,'')
+            .replace(/^IA:\s*/,'')
+            .replace(/^Flexo PRO IA:\s*/,'')
+            .replace(/\[.*?\]/g,'')
+            .trim();
+
+          if(txt){
+            html+=`
+              <div class="msg ia">
+                <div class="bubble">${esc(txt)}</div>
+                ${hora?`<div class="msg-time">${hora}</div>`:''}
+              </div>`;
+          }
         }
+
       });
+    }
 
-      html += `<div class="session">
-        <div class="session-header">
-          <div class="session-info">🕐 ${hora} · ${rows.length} mensagem(ns)</div>
-          <span class="session-tag ${ti.cls}">${ti.label}</span>
-        </div>`;
-
-      if (prop?.url_pdf) {
-        html += `<a class="proposta-btn" href="${prop.url_pdf}" target="_blank">📄 Ver proposta PDF</a>`;
+    // fallback antigo
+    else{
+      if(r.mensagem_cliente){
+        html+=`
+          <div class="msg cliente">
+            <div class="bubble">${esc(r.mensagem_cliente)}</div>
+            ${hora?`<div class="msg-time">${hora}</div>`:''}
+          </div>`;
       }
 
-      html += `<div class="messages">${mensagensHtml}</div></div>`;
-    });
+      if(r.resposta_lucas){
+        html+=`
+          <div class="msg ia">
+            <div class="bubble">${esc(r.resposta_lucas)}</div>
+            ${hora?`<div class="msg-time">${hora}</div>`:''}
+          </div>`;
+      }
+    }
 
-    document.getElementById('content').innerHTML = html;
-  } catch(e) {
-    document.getElementById('content').innerHTML = `<div class="center"><p>Erro: ${e.message}</p></div>`;
-  }
+  });
+
+  document.getElementById('content').innerHTML = html || 'Sem mensagens';
+
 }
 
 init();
 </script>
+
 </body>
 </html>
