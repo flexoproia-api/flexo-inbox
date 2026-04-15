@@ -106,13 +106,62 @@ function tagInfo(tag) {
   return {cls:'tag-sem',label:tag.replace(/[\[\]]/g,'')};
 }
 
+function parseHistorico(historico, hora) {
+  const htmlParts = [];
+  const linhas = String(historico || '')
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  linhas.forEach(linha => {
+    if (linha.startsWith('Cliente:')) {
+      const txt = linha.replace(/^Cliente:\s*/, '').trim();
+      if (txt) {
+        htmlParts.push(`<div class="msg cliente">
+          <div class="msg-who">Cliente</div>
+          <div class="bubble">${esc(txt)}</div>
+          ${hora ? `<div class="msg-time">${hora}</div>` : ''}
+        </div>`);
+      }
+      return;
+    }
+
+    if (
+      linha.startsWith('Lucas:') ||
+      linha.startsWith('IA:') ||
+      linha.startsWith('Flexo PRO IA:')
+    ) {
+      const txt = linha
+        .replace(/^Lucas:\s*/, '')
+        .replace(/^IA:\s*/, '')
+        .replace(/^Flexo PRO IA:\s*/, '')
+        .replace(/\[.*?\]/g, '')
+        .trim();
+
+      if (txt) {
+        htmlParts.push(`<div class="msg lucas">
+          <div class="msg-who">Lucas 🤖</div>
+          <div class="bubble">${esc(txt)}</div>
+          ${hora ? `<div class="msg-time">${hora}</div>` : ''}
+        </div>`);
+      }
+    }
+  });
+
+  return htmlParts.join('');
+}
+
 async function init() {
   const tel = getParam('telefone').replace(/\D/g,'');
-  if (!tel) { document.getElementById('content').innerHTML='<div class="center"><p>Informe ?telefone=5541999999999 na URL</p></div>'; return; }
+  if (!tel) {
+    document.getElementById('content').innerHTML='<div class="center"><p>Informe ?telefone=5541999999999 na URL</p></div>';
+    return;
+  }
+
   document.getElementById('header-phone').textContent = fmtTel(tel);
 
   try {
-    const res  = await fetch(`/api/historico-ia/${tel}`);
+    const res = await fetch(`/api/historico-ia/${tel}`);
     const body = await res.json();
     if (!body.ok) throw new Error(body.error);
 
@@ -122,18 +171,16 @@ async function init() {
       return;
     }
 
-    // Mapa de propostas
     const propMap = {};
-    propostas.forEach(p => { if(p.id_proposta) propMap[p.id_proposta]=p; });
+    propostas.forEach(p => { if (p.id_proposta) propMap[p.id_proposta] = p; });
 
-    // Agrupa por sessão
     const sessoes = {};
     conversas.forEach(r => {
-      const key = r.id_conversa || r.data_hora;
-      if (!sessoes[key]) sessoes[key]={rows:[],tag:'',id_proposta:''};
+      const key = r.id_conversa || r.data_hora || r.id || Math.random().toString(36).slice(2);
+      if (!sessoes[key]) sessoes[key] = { rows: [], tag: '', id_proposta: '' };
       sessoes[key].rows.push(r);
-      if (r.tag_gerada&&r.tag_gerada!=='SEM_TAG') sessoes[key].tag=r.tag_gerada;
-      if (r.id_proposta) sessoes[key].id_proposta=r.id_proposta;
+      if (r.tag_gerada && r.tag_gerada !== 'SEM_TAG') sessoes[key].tag = r.tag_gerada;
+      if (r.id_proposta) sessoes[key].id_proposta = r.id_proposta;
     });
 
     const keys = Object.keys(sessoes).sort((a,b)=>{
@@ -141,47 +188,77 @@ async function init() {
       return da.localeCompare(db);
     });
 
-    // Stats
     document.getElementById('stats').style.display='grid';
-    document.getElementById('s-sessoes').textContent=keys.length;
-    document.getElementById('s-msgs').textContent=conversas.length;
-    document.getElementById('s-props').textContent=propostas.length;
-    document.getElementById('s-data').textContent=fmtData(conversas[0]?.data_hora||'');
+    document.getElementById('s-sessoes').textContent = keys.length;
+    document.getElementById('s-msgs').textContent = conversas.length;
+    document.getElementById('s-props').textContent = propostas.length;
+    document.getElementById('s-data').textContent = fmtData(conversas[0]?.data_hora || '');
 
-    let html='', lastDay='';
+    let html = '', lastDay = '';
+
     keys.forEach(key => {
-      const s=sessoes[key], rows=s.rows;
-      const day=fmtData(rows[0]?.data_hora||''), hora=fmtHora(rows[0]?.data_hora||'');
-      const ti=tagInfo(s.tag), prop=propMap[s.id_proposta];
+      const s = sessoes[key];
+      const rows = s.rows;
+      const day = fmtData(rows[0]?.data_hora || '');
+      const hora = fmtHora(rows[0]?.data_hora || '');
+      const ti = tagInfo(s.tag);
+      const prop = propMap[s.id_proposta];
 
-      if (day!==lastDay) { html+=`<div class="day-divider"><span>${day}</span></div>`; lastDay=day; }
+      if (day !== lastDay) {
+        html += `<div class="day-divider"><span>${day}</span></div>`;
+        lastDay = day;
+      }
 
-      html+=`<div class="session">
+      let mensagensHtml = '';
+
+      rows.forEach(r => {
+        const h = fmtHora(r.data_hora);
+        const temC = r.mensagem_cliente?.trim();
+        const temL = r.resposta_lucas?.trim() && !r.resposta_lucas.includes('$now');
+
+        if (temC) {
+          mensagensHtml += `<div class="msg cliente">
+            <div class="msg-who">Cliente</div>
+            <div class="bubble">${esc(r.mensagem_cliente)}</div>
+            ${h ? `<div class="msg-time">${h}</div>` : ''}
+          </div>`;
+        }
+
+        if (temL) {
+          const txt = r.resposta_lucas.replace(/\[.*?\]/g, '').trim();
+          if (txt) {
+            mensagensHtml += `<div class="msg lucas">
+              <div class="msg-who">Lucas 🤖</div>
+              <div class="bubble">${esc(txt)}</div>
+              ${h ? `<div class="msg-time">${h}</div>` : ''}
+            </div>`;
+          }
+        }
+
+        if (!temC && !temL && r.historico_json) {
+          mensagensHtml += parseHistorico(r.historico_json, h);
+        }
+      });
+
+      html += `<div class="session">
         <div class="session-header">
           <div class="session-info">🕐 ${hora} · ${rows.length} mensagem(ns)</div>
           <span class="session-tag ${ti.cls}">${ti.label}</span>
         </div>`;
 
-      if (prop?.url_pdf) html+=`<a class="proposta-btn" href="${prop.url_pdf}" target="_blank">📄 Ver proposta PDF</a>`;
+      if (prop?.url_pdf) {
+        html += `<a class="proposta-btn" href="${prop.url_pdf}" target="_blank">📄 Ver proposta PDF</a>`;
+      }
 
-      html+=`<div class="messages">`;
-      rows.forEach(r => {
-        const temC=r.mensagem_cliente?.trim(), temL=r.resposta_lucas?.trim()&&!r.resposta_lucas.includes('$now');
-        const h=fmtHora(r.data_hora);
-        if (temC) html+=`<div class="msg cliente"><div class="msg-who">Cliente</div><div class="bubble">${esc(r.mensagem_cliente)}</div>${h?`<div class="msg-time">${h}</div>`:''}</div>`;
-        if (temL) {
-          const txt=r.resposta_lucas.replace(/\[.*?\]/g,'').trim();
-          if (txt) html+=`<div class="msg lucas"><div class="msg-who">Lucas 🤖</div><div class="bubble">${esc(txt)}</div>${h?`<div class="msg-time">${h}</div>`:''}</div>`;
-        }
-      });
-      html+=`</div></div>`;
+      html += `<div class="messages">${mensagensHtml}</div></div>`;
     });
 
-    document.getElementById('content').innerHTML=html;
+    document.getElementById('content').innerHTML = html;
   } catch(e) {
-    document.getElementById('content').innerHTML=`<div class="center"><p>Erro: ${e.message}</p></div>`;
+    document.getElementById('content').innerHTML = `<div class="center"><p>Erro: ${e.message}</p></div>`;
   }
 }
+
 init();
 </script>
 </body>
