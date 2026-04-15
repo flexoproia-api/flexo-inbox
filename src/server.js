@@ -203,6 +203,7 @@ app.get('/api/historico/:telefone', async (req, res) => {
 // ─── HISTÓRICO IA (via Supabase — atendimentos_ia) ───────────────────────────
 app.get('/api/historico-ia/:telefone', async (req, res) => {
   const tel = String(req.params.telefone).replace(/\D/g, '');
+
   try {
     const { createClient } = require('@supabase/supabase-js');
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
@@ -215,31 +216,62 @@ app.get('/api/historico-ia/:telefone', async (req, res) => {
 
     if (error) throw new Error(error.message);
 
-    // Parseia historico_json (texto corrido) em array de mensagens
+    function normalizeHistorico(historico) {
+      if (Array.isArray(historico)) {
+        return historico.map(x => String(x || '').trim()).filter(Boolean);
+      }
+
+      if (typeof historico === 'string') {
+        return historico.split('\n').map(x => x.trim()).filter(Boolean);
+      }
+
+      return [];
+    }
+
     const conversas = [];
+
     (atendimentos || []).forEach(at => {
-      const texto = at.historico_json || '';
-      const linhas = texto.split('\n').filter(l => l.trim());
+      const linhas = normalizeHistorico(at.historico_json);
+
       linhas.forEach(linha => {
         if (linha.startsWith('Cliente:')) {
           conversas.push({
+            id: at.id,
             id_conversa: at.id,
             data_hora: at.data_inicio,
-            mensagem_cliente: linha.replace('Cliente:', '').trim(),
+            historico_json: at.historico_json,
+            mensagem_cliente: linha.replace(/^Cliente:\s*/, '').trim(),
             resposta_lucas: '',
-            tag_gerada: at.tag_final || ''
+            tag_gerada: at.tag_final || '',
+            tag_final: at.tag_final || '',
+            status: at.status || ''
           });
-        } else if (linha.startsWith('Lucas:')) {
+        } else if (
+          linha.startsWith('IA:') ||
+          linha.startsWith('Flexo PRO IA:') ||
+          linha.startsWith('Lucas:')
+        ) {
+          const resposta = linha
+            .replace(/^IA:\s*/, '')
+            .replace(/^Flexo PRO IA:\s*/, '')
+            .replace(/^Lucas:\s*/, '')
+            .trim();
+
           const ultima = conversas[conversas.length - 1];
+
           if (ultima && ultima.id_conversa === at.id && !ultima.resposta_lucas) {
-            ultima.resposta_lucas = linha.replace('Lucas:', '').trim();
+            ultima.resposta_lucas = resposta;
           } else {
             conversas.push({
+              id: at.id,
               id_conversa: at.id,
               data_hora: at.data_inicio,
+              historico_json: at.historico_json,
               mensagem_cliente: '',
-              resposta_lucas: linha.replace('Lucas:', '').trim(),
-              tag_gerada: at.tag_final || ''
+              resposta_lucas: resposta,
+              tag_gerada: at.tag_final || '',
+              tag_final: at.tag_final || '',
+              status: at.status || ''
             });
           }
         }
