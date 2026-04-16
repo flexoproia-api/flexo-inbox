@@ -1,0 +1,24 @@
+{
+  "name": "Flux2Up — Atendimento",
+  "short_name": "Flux2Up",
+  "description": "Portal de atendimento humano via WhatsApp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080a10",
+  "theme_color": "#080a10",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/Logo_Flux_2_Up_semfundo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/Logo_Flux_2_Up_semfundo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
